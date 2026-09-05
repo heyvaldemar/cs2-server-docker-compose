@@ -55,6 +55,7 @@ jobs:
       # runtime — single source of truth.
       fail-fast: false
       matrix:
+        include:
           - name: cs2-server
             env_var: CS2_SERVER_IMAGE_TAG
 
