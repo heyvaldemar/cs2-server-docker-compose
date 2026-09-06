@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.0.1] - 2026-09-06
+
+### Fixed
+
+- **The freshness job was watching the wrong pins.** It looped over
+  `MINECRAFT_SERVER_IMAGE_TAG` and `MINECRAFT_SERVER_BACKUP_IMAGE_TAG`, names
+  carried over from the template this workflow was adapted from and absent from
+  the compose file here. The CS2 pin was never compared against the registry:
+  the one thing the job exists to do was not happening, while the job failed
+  daily for an unrelated reason.
+- **An absent variable no longer reports itself as a registry failure.** An
+  empty pin fell through to the image lookup and surfaced as "did not resolve
+  after three attempts", which points at Docker Hub. The variable is checked
+  first now and the error names this file, so the same mistake is loud instead
+  of misleading.
+
 ## [1.0.0] - 2026-09-05
 
 ### Added
@@ -38,5 +54,6 @@ _(no unreleased changes yet)_
   suite. It deliberately does not boot the game: a runner has neither the disk
   for 60 GB nor the hours, and a test that pretends otherwise never runs.
 
-[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/releases/tag/v1.0.0

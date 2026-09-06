@@ -110,8 +110,16 @@ jobs:
       - name: Compare pinned digests against what each tag resolves to now
         run: |
           status=0
-          for var in MINECRAFT_SERVER_IMAGE_TAG MINECRAFT_SERVER_BACKUP_IMAGE_TAG; do
+          for var in CS2_SERVER_IMAGE_TAG; do
             pin="$(grep -m1 -oE "\\\$\\{${var}:-.*" cs2-server-docker-compose.yml | sed -E -e ':a' -e 's/\$\{[A-Z0-9_]+:-([^{}]*)\}/\1/' -e 'ta')"
+            # An absent variable used to fall through to the registry lookup
+            # and surface as "did not resolve", which reads as an upstream
+            # problem. It is a problem in this file: say so.
+            if [ -z "$pin" ]; then
+              echo "::error::${var} is not present in cs2-server-docker-compose.yml — this job is checking a pin that does not exist"
+              status=1
+              continue
+            fi
             ref="${pin%%@*}"
             pinned_digest="${pin##*@}"
             # Three attempts: an unanswered registry lookup used to leave this empty,
@@ -142,6 +150,11 @@ jobs:
           check() {
             var="$1"; gh_repo="$2"
             pin="$(grep -m1 -oE "\\\$\\{${var}:-.*" cs2-server-docker-compose.yml | sed -E -e ':a' -e 's/\$\{[A-Z0-9_]+:-([^{}]*)\}/\1/' -e 'ta')"
+            if [ -z "$pin" ]; then
+              echo "::error::${var} is not present in cs2-server-docker-compose.yml — this job is checking a pin that does not exist"
+              status=1
+              return
+            fi
             ref="${pin%%@*}"
             pinned_version="${ref##*:}"
             latest="$(curl -fsSL --retry 3 -H "Authorization: Bearer $GH_API_TOKEN" "https://api.github.com/repos/${gh_repo}/releases/latest" | jq -r .tag_name)"
