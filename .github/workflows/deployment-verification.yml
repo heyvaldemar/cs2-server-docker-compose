@@ -145,6 +145,9 @@ jobs:
           exit "$status"
 
       - name: Compare the pinned version against the latest upstream release
+        # Runs even when the digest comparison above failed, so one run
+        # reports every problem it can see instead of one per day.
+        if: always()
         run: |
           status=0
           check() {
