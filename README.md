@@ -54,7 +54,7 @@ docker compose -p cs2 exec cs2-server rcon changelevel de_inferno
 
 ## Updating
 
-The pin lives in the `x-images` block at the top of the compose file, as an interpolation default, so a `git pull` delivers the version this repository has tested. To move deliberately, set `CS2_SERVER_IMAGE_VERSION` in `.env`.
+The pin lives in the `x-images` block at the top of the compose file, as an interpolation default, so a `git pull` delivers the version this repository has tested. To move deliberately, set `CS2_SERVER_IMAGE_VERSION` in `.env`. `./update.sh` does that on purpose: it moves to the latest release tag, refuses to cross a major unattended, and names any new required variable before anything has moved.
 
 Valve updates CS2 often, and the server refuses connections from a client on a newer build. Pull the image, recreate, and the game content updates on start.
 

@@ -9,15 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
-## [1.0.1] - 2026-09-06
+## [1.1.0] - 2026-09-07
 
-### Fixed
+### Added
 
-- **The freshness job was watching the wrong pins.** It looped over
-  `MINECRAFT_SERVER_IMAGE_TAG` and `MINECRAFT_SERVER_BACKUP_IMAGE_TAG`, names
-  carried over from the template this workflow was adapted from and absent from
-  the compose file here. The CS2 pin was never compared against the registry:
-  the one thing the job exists to do was not happening, while the job failed
+- **`update.sh`: move between release tags on purpose.** It updates to the latest release (a combination this repository's CI has booted and smoke-tested), refuses to cross a major version unattended, refuses to run over local changes, and names any new required variable before anything has moved. `--dry-run` says what would happen.
+
+ne thing the job exists to do was not happening, while the job failed
   daily for an unrelated reason.
 - **An absent variable no longer reports itself as a registry failure.** An
   empty pin fell through to the image lookup and surfaced as "did not resolve
@@ -54,6 +52,7 @@ _(no unreleased changes yet)_
   suite. It deliberately does not boot the game: a runner has neither the disk
   for 60 GB nor the hours, and a test that pretends otherwise never runs.
 
-[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/releases/tag/v1.0.0
