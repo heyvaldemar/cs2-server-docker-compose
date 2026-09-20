@@ -5,7 +5,7 @@
 # replace the whole reference. CI (the Trivy scan and check-pin-freshness)
 # reads the pin from this line: this block is the single source of truth.
 x-images:
-  cs2-server: &cs2-server-image ${CS2_SERVER_IMAGE_TAG:-joedwards32/cs2:${CS2_SERVER_IMAGE_VERSION:-4.0.1@sha256:34c093d24a23751fb409ae41dffe88884fb36964b365fcd25a31ec45e88ad8cf}}
+  cs2-server: &cs2-server-image ${CS2_SERVER_IMAGE_TAG:-joedwards32/cs2:${CS2_SERVER_IMAGE_VERSION:-5.0.0@sha256:90e6ef414ec29da557b9e615e7a86dd992606689a9bae31334805cf6e5d92531}}
 
 services:
   cs2-server:
