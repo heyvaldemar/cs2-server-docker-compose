@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.2.0] - 2026-09-20
+
 ### Added
 
 - **`CS2_SERVER_DELTATICKS_ENFORCE` and `CS2_SERVER_TV_RELAYVOICE`.** Upstream added both in 5.0.0 with defaults baked into the image, so the server behaves the same whether or not they are set. They are wired through and documented because a knob nobody can find is a knob that does not exist. The second one decides whether GOTV relays player voice, which is a privacy question on a public server rather than a tuning one.
@@ -59,7 +63,8 @@ ne thing the job exists to do was not happening, while the job failed
   suite. It deliberately does not boot the game: a runner has neither the disk
   for 60 GB nor the hours, and a test that pretends otherwise never runs.
 
-[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/releases/tag/v1.0.0
