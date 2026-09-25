@@ -1,6 +1,7 @@
 # CS2 server using Docker Compose
 
 [![Deployment Verification](https://github.com/heyvaldemar/cs2-server-docker-compose/actions/workflows/deployment-verification.yml/badge.svg?branch=main)](https://github.com/heyvaldemar/cs2-server-docker-compose/actions/workflows/deployment-verification.yml)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14894/badge)](https://www.bestpractices.dev/projects/14894)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Counter-Strike 2 dedicated server, pinned by digest, with the details that only show up after running one.
