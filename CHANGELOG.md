@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.2.1] - 2026-10-24
+
 ### Changed
 
 - **`joedwards32/cs2:5.0.0` moved to `joedwards32/cs2:5.0.1`.** The freshness check reported the lag; the deploy job booted the stack on the new image before this landed.
@@ -71,7 +75,8 @@ ne thing the job exists to do was not happening, while the job failed
   suite. It deliberately does not boot the game: a runner has neither the disk
   for 60 GB nor the hours, and a test that pretends otherwise never runs.
 
-[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.0...v1.0.1
