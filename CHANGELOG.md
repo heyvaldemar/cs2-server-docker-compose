@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.2.2] - 2026-10-25
+
+### Added
+
+- **The image's user is declared and checked.** Every file in `cs2-server-data` belongs to the user the image runs as, and `joedwards32/cs2` moved it twice in eight days in September 2026, 1000 to 999 and back; on the machine this template comes from, the first move left the servers unable to write their logs for a day and a half while every health check stayed green. The compose file declares `x-image-user: "1000:1000"`, and `tests/image-user.sh`, run in CI, fails when the pinned image runs as anyone else, so a pin refresh that moves the user stops before it ships as a patch. Nothing changes for a running server: every release so far, this one included, pins an image that runs as 1000:1000.
+
 ## [1.2.1] - 2026-10-24
 
 ### Changed
@@ -75,7 +81,8 @@ ne thing the job exists to do was not happening, while the job failed
   suite. It deliberately does not boot the game: a runner has neither the disk
   for 60 GB nor the hours, and a test that pretends otherwise never runs.
 
-[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.0.1...v1.1.0

@@ -105,7 +105,7 @@ jobs:
         # Pinned, and the same image a maintainer runs locally: Ubuntu's
         # packaged shellcheck is a different version with different defaults.
         run: |
-          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 tests/e2e-healthcheck.sh
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 tests/e2e-healthcheck.sh tests/image-user.sh
 
       - name: Prove the exact match catches what a substring match misses
         # Five assertions against a real container, with no CS2 download: two
@@ -116,6 +116,13 @@ jobs:
         run: |
           chmod +x tests/e2e-healthcheck.sh
           ./tests/e2e-healthcheck.sh
+
+      - name: The pinned image runs as the user the volume belongs to
+        # Asks the registry what the pin runs as and compares it with
+        # x-image-user in the compose file, then runs again on a copy that
+        # declares another user and must fail. A pin refresh that moves the
+        # image's user stops here instead of shipping as a patch.
+        run: ./tests/image-user.sh
 
       - name: The compose file parses with the shipped defaults
         run: |

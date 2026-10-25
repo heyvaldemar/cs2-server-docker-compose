@@ -7,6 +7,16 @@
 x-images:
   cs2-server: &cs2-server-image ${CS2_SERVER_IMAGE_TAG:-joedwards32/cs2:${CS2_SERVER_IMAGE_VERSION:-5.0.1@sha256:ae10b1aa8734498bb6f88d1cc803a88a9dbbb7d19fd37450747432ccc3a41653}}
 
+# THE USER THE IMAGE RUNS AS, and so the owner of every file in the volume.
+# A volume does not follow when an image moves its user, and joedwards32/cs2
+# moved it twice in eight days in September 2026 (1000 to 999 and back). On
+# the machine this template comes from, the first move left the server
+# unable to write its logs for a day and a half while every health check
+# stayed green. tests/image-user.sh asks the registry what the pinned image
+# runs as and fails when it is not this, so a pin refresh that moves the user
+# cannot ship as a patch. Compose ignores this key; it is read by that test.
+x-image-user: "1000:1000"
+
 services:
   cs2-server:
     image: *cs2-server-image
