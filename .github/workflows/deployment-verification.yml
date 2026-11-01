@@ -95,8 +95,9 @@ jobs:
           category: trivy-${{ matrix.name }}
 
   healthcheck:
-    name: The health check, in both directions
+    name: The health check, both ways, and the Steam check, against stubs
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -105,7 +106,7 @@ jobs:
         # Pinned, and the same image a maintainer runs locally: Ubuntu's
         # packaged shellcheck is a different version with different defaults.
         run: |
-          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 tests/e2e-healthcheck.sh tests/image-user.sh
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 tests/*.sh tools/*.sh update.sh
 
       - name: Prove the exact match catches what a substring match misses
         # Five assertions against a real container, with no CS2 download: two
@@ -123,6 +124,20 @@ jobs:
         # declares another user and must fail. A pin refresh that moves the
         # image's user stops here instead of shipping as a patch.
         run: ./tests/image-user.sh
+
+      - name: The Steam check, every branch, against stubbed answers
+        # CI cannot boot CS2 (60 GB), so the decisions are driven by stubbed
+        # A2S and Steam answers instead: current, behind with people on,
+        # behind and empty (restart, then proof from Steam), three tries a
+        # day, silence, one update per host per pass - and four plants, each
+        # a copy with one rule removed, seen doing what the rule prevents.
+        run: bash tests/steam-uptodate.sh
+
+      - name: The timer keeps running the night the clocks go back
+        run: bash tests/timers.sh
+
+      - name: Every script in tools/ is read whole before it runs
+        run: bash tests/read-whole.sh
 
       - name: The compose file parses with the shipped defaults
         run: |

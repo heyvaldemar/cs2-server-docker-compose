@@ -1,0 +1,18 @@
+[Unit]
+Description=Ask Steam whether the Counter-Strike 2 server is current, and update it while it is empty
+Documentation=https://github.com/heyvaldemar/cs2-server-docker-compose#keeping-the-game-current
+
+[Service]
+Type=oneshot
+# Where this repository is checked out. The script finds the compose file and
+# keeps its state (.steam-uptodate*) there.
+WorkingDirectory=/opt/cs2-server-docker-compose
+ExecStart=/opt/cs2-server-docker-compose/tools/steam-uptodate.sh
+# BOUNDED, SO A HANG BECOMES A FAILURE. A run is one query; an update is a
+# restart in which the image has SteamCMD verify about 60 GB, and then up to
+# twenty minutes of asking Steam until it agrees. An hour is far above that
+# and far below forever.
+TimeoutStartSec=1h
+# To hear about it when something new is said (behind with players on, stuck,
+# updated), give it a command that takes the message on stdin, for example:
+# Environment="STEAM_UPTODATE_NOTIFY=curl -fsS --data-binary @- https://ntfy.sh/<your-topic>"
