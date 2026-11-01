@@ -55,6 +55,29 @@ docker compose -p cs2 exec cs2-server rcon status
 docker compose -p cs2 exec cs2-server rcon changelevel de_inferno
 ```
 
+## Keeping the game current
+
+**A healthy server is not a joinable one.** On the machine this template comes from, Team Fortress 2 ran out of date for days in October 2026 while every check passed: the container was healthy, A2S answered, Steam listed the server, and the image watchers had nothing to say because the image had not changed. Players on the current client cannot join a server Steam calls out of date. Steam answers that question directly: `ISteamApps/UpToDateCheck` takes the version a server reports over A2S and says whether it is still accepted. `tools/steam-uptodate.sh` asks it every fifteen minutes, and this image updates the game on every start, so a restart is the update:
+
+- **current**: nothing.
+- **behind, people on**: it says so once and waits. A restart drops them.
+- **behind, nobody on**: it restarts the server and asks Steam again until Steam calls the new version current. Steam's answer is the proof, not the restart.
+- **still behind after three restarts in 24 hours**: it says so once, stops trying, and fails every run, so the timer shows up in `systemctl --failed`.
+- **no answer** from the server or from Steam: nothing is decided. A player count it cannot read is never zero. Six hours of silence (`STEAM_UPTODATE_SILENCE`) and it fails.
+
+**One update per host per pass.** On the machine this template comes from, CS2 and CS2 Classic were both behind on the same evening and were updated back to back; each restart had SteamCMD verify 73 GB, and the CPU reached 81 °C. The TF2, CS2, CS2 Classic and Left 4 Dead 2 templates ship the same script and share one host-wide lock and stamp (`/var/tmp/steam-uptodate.*`), so a second server that is behind waits for a pass fifteen minutes after the first one finished. Their timers fire three minutes apart for the same reason.
+
+"Says so" is one line in the journal every run, and, when `STEAM_UPTODATE_NOTIFY` is set, a message on its stdin the first time something new happens: a webhook, mail, anything that reads stdin. The service file has an example.
+
+```bash
+# edit the two paths in the service file to where this repository is checked out
+sudo cp systemd/steam-uptodate.service systemd/steam-uptodate.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now steam-uptodate.timer
+tools/steam-uptodate.sh --check      # what Steam says right now
+```
+
+**The timer runs on UTC, with a net under it.** On 2026-11-01, when the clocks went back an hour, the server this template comes from ran none of its local-time timers between 06:00 and 07:00 UTC: systemd reads a local calendar in wall-clock time and took the repeated hour as already gone. A calendar in UTC has no repeated hour, and `OnUnitActiveSec=16min` makes up a run missed for any other reason. `tests/timers.sh` checks both with `systemd-analyze` on Toronto time that night. The script is one brace group read whole before it runs, so an edit to its file mid-run cannot change what the run does (`tests/read-whole.sh`).
+
 ## Updating
 
 The pin lives in the `x-images` block at the top of the compose file, as an interpolation default, so a `git pull` delivers the version this repository has tested. To move deliberately, set `CS2_SERVER_IMAGE_VERSION` in `.env`. `./update.sh` does that on purpose: it moves to the latest release tag, refuses to cross a major unattended, and names any new required variable before anything has moved.
@@ -67,7 +90,9 @@ Valve updates CS2 often, and the server refuses connections from a client on a n
 
 `tests/image-user.sh` asks the registry, without pulling, what the pinned image runs as, compares it with `x-image-user`, and then runs again on a copy of the compose file declaring another user, which must fail.
 
-CI runs both on every push alongside shell and workflow linting, a Trivy scan of the pinned image, and a daily check that the pin still resolves to what upstream publishes.
+`tests/steam-uptodate.sh` drives every branch of `tools/steam-uptodate.sh` against stubbed A2S and Steam answers (current, behind with people on, behind and empty, a restart Steam does not accept, three tries a day, silence, another update on the host), then runs four copies with one rule taken out each (the player count, the proof by Steam, the host lock, the daily limit) and sees each do what the rule prevents. `tests/read-whole.sh` and `tests/timers.sh` check the script and its timer.
+
+CI runs all of them on every push alongside shell and workflow linting, a Trivy scan of the pinned image, and a daily check that the pin still resolves to what upstream publishes.
 
 CI does not boot the game. A GitHub runner has neither the disk for 60 GB of game content nor the hours, and a test that pretends otherwise would be a test that never runs.
 

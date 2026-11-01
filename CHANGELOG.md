@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(no unreleased changes yet)_
+### Added
+
+- **`tools/steam-uptodate.sh` and a systemd timer: Steam is asked every fifteen minutes whether the server is current, and an empty server that is not gets restarted.** This image updates the game on every start, and nothing decided when a start was due. The script reads the version the server reports over A2S and asks Steam's `UpToDateCheck`, the question that, on the machine this template comes from, nobody asked while Team Fortress 2 sat out of date for days with every check green. Behind with people on, it says so once and waits. Behind and empty, it restarts the server and asks Steam again until Steam calls the new version current: the proof is Steam's answer, never the restart. At most three restarts in 24 hours, then it says so once and fails every run. One update per host per pass, by a lock and a stamp shared with the other Source templates: two 73 GB verifications back to back took a CPU there to 81 °C. A silent server or Steam decides nothing, for up to six hours. Something new also goes to `STEAM_UPTODATE_NOTIFY` when it is set. The timer is on UTC with an `OnUnitActiveSec` net (`tests/timers.sh`), the script is one brace group read whole before it runs (`tests/read-whole.sh`), and `tests/steam-uptodate.sh` drives every branch against stubbed answers, with four plants, one rule taken out each.
 
 ## [1.2.2] - 2026-10-25
 
