@@ -67,7 +67,14 @@ services:
       CS2_BOT_DIFFICULTY: ${CS2_SERVER_BOT_DIFFICULTY:-1}
       CS2_LOG: ${CS2_SERVER_LOG:-on}
       CS2_LOG_ECHO: ${CS2_SERVER_LOG_ECHO:-1}
-      CS2_RCON_PORT: ${CS2_SERVER_PORT:-27015}
+      # NO CS2_RCON_PORT. The image starts `socat TCP-LISTEN:$CS2_RCON_PORT
+      # -> 127.0.0.1:$CS2_PORT` before the game whenever it is set; it is meant
+      # for a second port. Up to v1.3 this file set it to the game port itself,
+      # so socat took TCP 27015 first and forwarded it to itself, the game
+      # never got its rcon socket, and every rcon connection was closed
+      # unanswered: measured on a real CS2 in CI on 2026-11-01. Unset, the game
+      # serves rcon on the game port's TCP side, which is published below.
+      # tests/rcon.sh fails if it comes back.
       # Added upstream in 5.0.0. Both carry the image's own defaults, so the
       # server behaves identically whether or not these are set — they are
       # here because a knob nobody can find is a knob that does not exist.

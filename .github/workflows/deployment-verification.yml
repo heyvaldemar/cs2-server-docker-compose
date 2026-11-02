@@ -133,6 +133,14 @@ jobs:
         # a copy with one rule removed, seen doing what the rule prevents.
         run: bash tests/steam-uptodate.sh
 
+      - name: rcon, against a stand-in inside the pinned image
+        # The README's rcon command up to v1.3 named a program the image does
+        # not have. tools/rcon.sh runs in the image's own python3; here it
+        # talks to tests/fixtures/fake-rcon.py, run in the pinned image as
+        # this compose file's service: status read to its end marker, a server
+        # that never answers the marker, a wrong password, and a plant.
+        run: bash tests/rcon.sh
+
       - name: The timer keeps running the night the clocks go back
         run: bash tests/timers.sh
 

@@ -49,11 +49,13 @@ One warning if you go that way: `network_mode: host` hangs srcds at Steam initia
 
 ```bash
 # rcon, using the password from .env
-docker compose -p cs2 exec cs2-server rcon status
+tools/rcon.sh status
 
 # change the map
-docker compose -p cs2 exec cs2-server rcon changelevel de_inferno
+tools/rcon.sh changelevel de_inferno
 ```
+
+Up to v1.3 this said `docker compose -p cs2 exec cs2-server rcon status`, and rcon could not work at all, for two reasons. The image has no rcon program. And the compose file set `CS2_RCON_PORT` to the game port, which makes the image's entry script start `socat` on that TCP port, forwarding it to itself, before the game starts: the game never got its rcon socket, and every connection was closed unanswered. Both were measured on a real CS2 booted on a CI runner on 2026-11-01 (73 GB, 22 minutes): with the old file the connection was closed ([run](https://github.com/heyvaldemar/cs2-server-docker-compose/actions/runs/41369517037)); without `CS2_RCON_PORT`, `tools/rcon.sh status` came back with the hostname and version 1.41.9.4, a wrong password was refused, and Steam called the server current ([run](https://github.com/heyvaldemar/cs2-server-docker-compose/actions/runs/41372125676)). `tools/rcon.sh` runs the protocol in the image's own python3 from inside the container and takes the password from `.env` on stdin, never from the command line where `ps` would show it.
 
 ## Keeping the game current
 
@@ -94,7 +96,9 @@ Valve updates CS2 often, and the server refuses connections from a client on a n
 
 CI runs all of them on every push alongside shell and workflow linting, a Trivy scan of the pinned image, and a daily check that the pin still resolves to what upstream publishes.
 
-CI does not boot the game. A GitHub runner has neither the disk for 60 GB of game content nor the hours, and a test that pretends otherwise would be a test that never runs.
+`tests/rcon.sh` runs `tools/rcon.sh` in the pinned image's own python3 against `tests/fixtures/fake-rcon.py`, started in the pinned image as this compose file's service: `status` read to its end marker, a server that never answers the marker (read until it goes quiet, no hang), a wrong password, no password, and a plant, a client that waits only for the marker. It also fails if `CS2_RCON_PORT` comes back at the game port, with a plant that puts it back.
+
+CI does not boot the game on every push. The install is 73 GB and took 22 minutes on a runner, measured once on 2026-11-01 to prove `tools/rcon.sh` and the Steam check against a real server.
 
 ---
 
