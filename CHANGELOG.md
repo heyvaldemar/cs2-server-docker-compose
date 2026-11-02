@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.3.2] - 2026-11-01
+
 ### Fixed
 
 - **rcon works; before this release it could not, for two reasons.** The README said `docker compose -p cs2 exec cs2-server rcon status`, and the pinned image has no rcon program (`command -v rcon` inside it is empty). And the compose file set `CS2_RCON_PORT` to the game port since 1.0.0; the image's entry script then starts `socat` on that TCP port, forwarding it to itself, before the game starts, so the game never got its rcon socket and every rcon connection was closed unanswered. Measured on a real CS2 booted on a CI runner: with the old file the connection was closed (run 41369517037); without `CS2_RCON_PORT`, `tools/rcon.sh status` returned the hostname and version 1.41.9.4, a wrong password was refused, and Steam called the server current (run 41372125676). `tools/rcon.sh` runs the protocol in the image's own python3 from inside the container, with the password from `.env` on stdin, never in argv. `tests/rcon.sh` runs it in CI against a stand-in started in the pinned image as this compose file's service, and fails if `CS2_RCON_PORT` comes back at the game port.
-
 ## [1.3.1] - 2026-11-01
 
 ### Changed
@@ -93,7 +96,8 @@ ne thing the job exists to do was not happening, while the job failed
   suite. It deliberately does not boot the game: a runner has neither the disk
   for 60 GB nor the hours, and a test that pretends otherwise never runs.
 
-[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.2.1...v1.2.2
