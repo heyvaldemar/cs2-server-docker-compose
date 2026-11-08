@@ -55,13 +55,16 @@ jobs:
     # server's A2S answer, red with the server stopped by SIGSTOP while the old
     # /proc check stays green, green again after SIGCONT; and across a map
     # change it answers again with Docker healthy throughout.
-    # UBUNTU 24.04, NOT ubuntu-latest. On 2026-11-01 (run 41372125676, then the
-    # 24.04 image) CS2 logged into Steam with a placeholder token and bound
-    # 0.0.0.0:27015 27 minutes in. On ubuntu-26.04 with Docker Engine 29.4.2 it
-    # logged "Cert request for invalid failed ... We're not logged into Steam"
-    # for 80 minutes and bound nothing (cs2-server-docker-compose run
-    # 42519498218). Pinned until that is understood.
-    runs-on: ubuntu-24.04
+    # A REAL GAME SERVER TOKEN IS NEEDED. With a placeholder token CS2 no
+    # longer logs into Steam and never binds its port: on 2026-11-08 it logged
+    # "Cert request for invalid failed ... We're not logged into Steam" for 80
+    # minutes on both the ubuntu-26.04 and the ubuntu-24.04 runner (runs
+    # 42519498218, 42526820588), where on 2026-11-01 the same placeholder
+    # logged in. The token comes from the repository secret
+    # CS2_CI_STEAM_TOKEN when it exists; without it this workflow stays red,
+    # which is the health check telling the truth about a server nobody can
+    # reach.
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
       COMPOSE: docker compose -f cs2-server-docker-compose.yml -p cs2
@@ -96,12 +99,22 @@ jobs:
           sudo systemctl restart docker
 
       - name: First start - the game is downloaded into the volume
+        env:
+          STEAM_TOKEN: ${{ secrets.CS2_CI_STEAM_TOKEN }}
         run: |
           cp .env.example .env
-          # A throwaway rcon password, and a placeholder game server token: CS2
-          # starts without a valid one, which is all this needs.
+          # A throwaway rcon password, and a placeholder game server token that
+          # the repository secret replaces when it exists (see runs-on above).
           sed -i -e "s/^CS2_SERVER_RCON_PASSWORD=.*/CS2_SERVER_RCON_PASSWORD=$(openssl rand -hex 16)/" \
                  -e "s/^CS2_SERVER_STEAM_TOKEN=$/CS2_SERVER_STEAM_TOKEN=ci-placeholder/" .env
+          # The token, when the secret exists, goes into .env through awk's
+          # environment, never a command line.
+          if [ -n "$STEAM_TOKEN" ]; then
+            awk '/^CS2_SERVER_STEAM_TOKEN=/ { print "CS2_SERVER_STEAM_TOKEN=" ENVIRON["STEAM_TOKEN"]; next } { print }' .env > .env.new && mv .env.new .env
+            echo "a game server token from the repository secret"
+          else
+            echo "::warning::no CS2_CI_STEAM_TOKEN secret: a placeholder token, with which CS2 no longer logs into Steam"
+          fi
           docker volume create cs2-server-data >/dev/null
           $COMPOSE up -d
 
