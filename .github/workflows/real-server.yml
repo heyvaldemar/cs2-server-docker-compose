@@ -55,7 +55,13 @@ jobs:
     # server's A2S answer, red with the server stopped by SIGSTOP while the old
     # /proc check stays green, green again after SIGCONT; and across a map
     # change it answers again with Docker healthy throughout.
-    runs-on: ubuntu-latest
+    # UBUNTU 24.04, NOT ubuntu-latest. On 2026-11-01 (run 41372125676, then the
+    # 24.04 image) CS2 logged into Steam with a placeholder token and bound
+    # 0.0.0.0:27015 27 minutes in. On ubuntu-26.04 with Docker Engine 29.4.2 it
+    # logged "Cert request for invalid failed ... We're not logged into Steam"
+    # for 80 minutes and bound nothing (cs2-server-docker-compose run
+    # 42519498218). Pinned until that is understood.
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       COMPOSE: docker compose -f cs2-server-docker-compose.yml -p cs2
