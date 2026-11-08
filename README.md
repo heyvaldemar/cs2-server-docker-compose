@@ -18,14 +18,12 @@ The first start downloads roughly 60 GB through SteamCMD, so it is slow once and
 
 ```bash
 docker compose -p cs2 logs -f cs2-server
-docker compose -p cs2 ps          # healthy once the game process is up
+docker compose -p cs2 ps          # healthy once the game answers A2S_INFO
 ```
 
 ## What this file knows that a fresh one does not
 
-**The health check matches the game exactly, not as a substring.** Two commands run in this container: `cs2`, the game, and `cs2.sh`, the script supervising it. Write the check as a substring search and either satisfies it, so the game can crash and leave the wrapper standing while the container reports healthy — and docker does not restart an unhealthy container on its own, so nothing else catches it either. `grep -qsx` anchors the match to the whole line.
-
-That is not a theoretical concern. A Killing Floor 2 server on the machine this template comes from crashed with a core dump and spent seventeen hours green, because its check matched the shell that was running the check. `tests/e2e-healthcheck.sh` proves the distinction against a real container: with the game killed, the exact form goes red and the substring form stays green.
+**The health check asks the game, not its process.** `tools/healthcheck.sh`, mounted read-only, sends A2S_INFO, the query every server browser sends, to the game port and is healthy only on the engine's reply. Up to v1.3.3 it looked for `cs2` in `/proc`, exactly so that the `cs2.sh` wrapper could not satisfy it; but a hung or stopped game keeps its process too, and on Docker Engine 29.4.2 Black Mesa's server, in its own template, ran with no socket at all while that kind of check stayed green. The log is not read either. A map change silences it for seconds; one check tries twice, and Docker allows three misses at a 60-second interval. Each check ends within 7 seconds. **It asks from inside the container**, at the address the game answers on: healthy proves the server answers there, not that the port is published on the host or open in your firewall. Check that from outside, with a server browser or `tools/steam-uptodate.sh --check`.
 
 **The game volume is declared external, so `docker compose down -v` cannot delete it.** That is 60 GB of content SteamCMD fetched once, and `down -v` is the command everyone reaches for when a stack misbehaves. On a metered connection it comes back twice: once in bytes and once on the bill. Creating it by hand once is the price of not losing it by accident.
 
@@ -90,7 +88,7 @@ Valve updates CS2 often, and the server refuses connections from a client on a n
 
 ## Testing
 
-`tests/e2e-healthcheck.sh` runs five assertions against a real container and needs no CS2 download: the exact check is green with the game running, the substring check is green too, and after the game is killed the exact one goes red while the substring one stays green with the wrapper still standing.
+`tests/e2e-healthcheck.sh` runs the health check in the pinned image against a stand-in that answers A2S_INFO, answers after a challenge, stays silent, or is not there: healthy, healthy, unhealthy within 7 seconds, unhealthy.
 
 `tests/image-user.sh` asks the registry, without pulling, what the pinned image runs as, compares it with `x-image-user`, and then runs again on a copy of the compose file declaring another user, which must fail.
 
@@ -100,7 +98,7 @@ CI runs all of them on every push alongside shell and workflow linting, a Trivy 
 
 `tests/rcon.sh` runs `tools/rcon.sh` in the pinned image's own python3 against `tests/fixtures/fake-rcon.py`, started in the pinned image as this compose file's service: `status` read to its end marker, a server that never answers the marker (read until it goes quiet, no hang), a wrong password, no password, and a plant, a client that waits only for the marker. It also fails if `CS2_RCON_PORT` comes back at the game port, with a plant that puts it back.
 
-CI does not boot the game on every push. The install is 73 GB and took 22 minutes on a runner, measured once on 2026-11-01 to prove `tools/rcon.sh` and the Steam check against a real server.
+**The real server** runs in `.github/workflows/real-server.yml`, not on every push: the install is 73 GB and took 22 minutes on a runner (measured 2026-11-01). It installs and boots the game, samples the health check before the game runs and needs it red, waits for it to go green on the engine's A2S answer, changes the map over rcon and needs it answering again on the new map with Docker healthy throughout, then **stops the game** with SIGSTOP and needs it red while the old `/proc` check stays green, and green again after SIGCONT. It runs on a push or pull request that touches the health check, its stand-in test, the compose file (every image pin is there), `.env.example` or the workflow itself, so a pin update meets the real server before it is merged; every Monday at 04:47 UTC; and by hand.
 
 ---
 

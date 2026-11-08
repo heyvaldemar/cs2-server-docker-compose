@@ -108,12 +108,12 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 tests/*.sh tools/*.sh update.sh
 
-      - name: Prove the exact match catches what a substring match misses
-        # Five assertions against a real container, with no CS2 download: two
-        # processes named cs2 and cs2.sh are the whole fixture. The game is
-        # killed and the exact check must go red while the substring check
-        # stays green - if the substring form ever failed too, the comment in
-        # the compose file would be wrong and the run says so.
+      - name: The health check goes by the game's answer, in the pinned image
+        # tools/healthcheck.sh is healthy only on the engine's reply to
+        # A2S_INFO. Run in the pinned image, so its tools are proven there,
+        # against a stand-in that answers, answers after a challenge, stays
+        # silent, or is not there at all (tests/fixtures/fake-a2s.py). The real
+        # server is .github/workflows/real-server.yml.
         run: |
           chmod +x tests/e2e-healthcheck.sh
           ./tests/e2e-healthcheck.sh

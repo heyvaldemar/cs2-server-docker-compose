@@ -87,19 +87,19 @@ services:
       TZ: ${CS2_SERVER_TIMEZONE:-UTC}
     volumes:
       - cs2-server-data:/home/steam/cs2-dedicated
+      # The health check: A2S_INFO to the game port (see healthcheck: below).
+      - ./tools/healthcheck.sh:/healthcheck.sh:ro
     healthcheck:
-      # EXACT MATCH, BECAUSE THE WRAPPER IS ALSO CALLED cs2.
-      #
-      # Two commands run in this container: `cs2`, the game, and `cs2.sh`, the
-      # script supervising it. A substring search is satisfied by either, so the
-      # game can die and leave the wrapper standing while the container goes on
-      # reporting healthy — and docker will not restart an unhealthy container
-      # anyway, so nothing would notice at all. `-x` anchors the match to the
-      # whole line, and a comm file holds only the name.
-      #
-      # tests/e2e-healthcheck.sh proves it: the exact form goes red when only
-      # the wrapper is left, and the substring form stays green.
-      test: ["CMD-SHELL", "grep -qsx cs2 /proc/[0-9]*/comm"]
+      # THE GAME'S OWN ANSWER, NOT ITS PROCESS. tools/healthcheck.sh sends
+      # A2S_INFO, the query every server browser sends, to the game port and is
+      # healthy only on the engine's reply. Up to v1.3.3 this looked for cs2 in
+      # /proc, which a hung or stopped game keeps; the real-server workflow
+      # stops it with SIGSTOP and requires red. The log is not read either. A
+      # map change silences it for seconds; the check tries twice and Docker
+      # allows three misses at this interval. Each check ends within 7 seconds.
+      # It asks from inside the container: it does not prove the port is
+      # published on the host or open in a firewall.
+      test: ["CMD", "bash", "/healthcheck.sh", "${CS2_SERVER_PORT:-27015}"]
       interval: 60s
       timeout: 10s
       retries: 3

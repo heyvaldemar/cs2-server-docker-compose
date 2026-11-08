@@ -1,0 +1,181 @@
+name: Real Server
+
+# THE HEALTH CHECK, PROVEN AGAINST THE REAL GAME. The game is 73 GB and 22
+# minutes of SteamCMD on a runner (measured 2026-11-01), too much for every
+# push, so this runs when something the check depends on changes, and on a
+# timer:
+#   - a push or pull request that touches the health check, its stand-in test,
+#     the compose file (every image pin lives there), .env.example, or this
+#     workflow; so a pin update or a change to the check meets the real
+#     server before it is merged;
+#   - every Monday at 04:47 UTC;
+#   - by hand (workflow_dispatch).
+# Every other push runs the check against a stand-in in the pinned image
+# (deployment-verification.yml).
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - tools/healthcheck.sh
+      - tests/e2e-healthcheck.sh
+      - tests/fixtures/fake-a2s.py
+      - cs2-server-docker-compose.yml
+      - .env.example
+      - .github/workflows/real-server.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - tools/healthcheck.sh
+      - tests/e2e-healthcheck.sh
+      - tests/fixtures/fake-a2s.py
+      - cs2-server-docker-compose.yml
+      - .env.example
+      - .github/workflows/real-server.yml
+  schedule:
+    - cron: "47 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: real-server-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  game:
+    name: The real server, and the health check asking it
+    # Installed the way a first start does, then the health check proven both
+    # ways: red while SteamCMD downloads and nothing is bound, green on the
+    # server's A2S answer, red with the server stopped by SIGSTOP while the old
+    # /proc check stays green, green again after SIGCONT; and across a map
+    # change it answers again with Docker healthy throughout.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      COMPOSE: docker compose -f cs2-server-docker-compose.yml -p cs2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Make room for the game
+        # About 73 GB of game and 1.2 GB of image; measured: 111 GB free after this.
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
+          docker system prune -af >/dev/null
+          df -h /
+
+      - name: Docker 29.4.2 answers socketcall with ENOSYS; give its daemon the profile 29.4.3 ships
+        # SteamCMD is 32-bit and makes every socket through socketcall(2),
+        # which Docker Engine 29.4.2 alone refuses (moby/moby#52506); the
+        # ubuntu-26.04 runner ships it. On that version, and only there, the
+        # daemon gets the default profile 29.4.3 ships (moby/profiles seccomp
+        # v0.2.3), pinned by commit and checksum.
+        run: |
+          v="$(docker version --format '{{.Server.Version}}')"
+          if [ "$v" != 29.4.2 ]; then echo "Docker $v: its own profile allows socketcall"; exit 0; fi
+          sudo curl -fsSL -o /etc/docker/seccomp-29.4.3.json \
+            https://raw.githubusercontent.com/moby/profiles/836ae4d37ef2ec995c77c99fc55f5b5f3af3a897/seccomp/default.json
+          echo "536529b665dd0972c37bfb569f5d4ac8a53592e7b00752bc39ff063ca9864c74  /etc/docker/seccomp-29.4.3.json" | sha256sum -c -
+          f=/etc/docker/daemon.json
+          [ -s "$f" ] || echo '{}' | sudo tee "$f" >/dev/null
+          sudo jq '. + {"seccomp-profile": "/etc/docker/seccomp-29.4.3.json"}' "$f" | sudo tee "$f.new" >/dev/null
+          sudo mv "$f.new" "$f"
+          sudo systemctl restart docker
+
+      - name: First start - the game is downloaded into the volume
+        run: |
+          cp .env.example .env
+          # A throwaway rcon password, and a placeholder game server token: CS2
+          # starts without a valid one, which is all this needs.
+          sed -i -e "s/^CS2_SERVER_RCON_PASSWORD=.*/CS2_SERVER_RCON_PASSWORD=$(openssl rand -hex 16)/" \
+                 -e "s/^CS2_SERVER_STEAM_TOKEN=$/CS2_SERVER_STEAM_TOKEN=ci-placeholder/" .env
+          docker volume create cs2-server-data >/dev/null
+          $COMPOSE up -d
+
+      - name: While SteamCMD downloads, nothing is bound and the check is red
+        run: |
+          cid="$($COMPOSE ps -q cs2-server)"
+          sleep 45
+          if docker exec "$cid" sh -c "grep -qsx cs2 /proc/[0-9]*/comm"; then
+            echo "the game is already running 45 s in; the download stage was too short to sample"
+            exit 0
+          fi
+          n=0; out="$(docker exec "$cid" bash /healthcheck.sh 27015 2>&1)" || n=$?
+          echo "45 s in, before the game runs: the check exits $n: $out"
+          [ "$n" = 1 ] || { echo "::error::the check was not red before the game ran"; exit 1; }
+
+      - name: Wait for the health check to go green
+        run: |
+          cid="$($COMPOSE ps -q cs2-server)"
+          for _ in $(seq 1 480); do
+            s="$(docker inspect "$cid" --format '{{.State.Health.Status}}' 2>/dev/null || echo none)"
+            [ "$s" = healthy ] && { echo "health: $s"; docker exec "$cid" bash /healthcheck.sh 27015; exit 0; }
+            [ "$s" = unhealthy ] && break
+            sleep 10
+          done
+          echo "::error::the server never reported healthy"
+          $COMPOSE logs --tail 80
+          echo "--- the health check's own words, last runs"
+          docker inspect "$cid" --format '{{range .State.Health.Log}}exit {{.ExitCode}}: {{.Output}}{{end}}' | tail -c 2000
+          echo "--- UDP sockets in the container"
+          docker exec "$cid" cat /proc/net/udp
+          exit 1
+
+      - name: The health check answers again after a map change
+        # A changelevel silences A2S_INFO while the next map loads. The check
+        # must answer again within two minutes, on the new map, and Docker's
+        # status (three misses at a 60-second interval) must stay healthy.
+        run: |
+          cid="$($COMPOSE ps -q cs2-server)"
+          docker exec "$cid" bash /healthcheck.sh 27015
+          tools/rcon.sh changelevel de_inferno >/dev/null
+          t0=$SECONDS; misses=0; ok=""
+          while [ $((SECONDS - t0)) -lt 120 ]; do
+            if docker exec "$cid" bash /healthcheck.sh 27015 >/dev/null 2>&1; then
+              [ $((SECONDS - t0)) -ge 15 ] && { ok=1; break; }
+            else
+              misses=$((misses + 1))
+            fi
+            sleep 2
+          done
+          map="$(tools/rcon.sh status | sed -n 's/.*\(de_[a-z0-9_]*\).*/\1/p' | head -1)"
+          s="$(docker inspect "$cid" --format '{{.State.Health.Status}}')"
+          echo "after changelevel: map ${map:-?}, $misses missed checks, answering at $((SECONDS - t0))s, docker health: $s"
+          [ "$ok" = 1 ] || { echo "::error::the game did not answer again within two minutes of the map change"; exit 1; }
+          [ "$map" = de_inferno ] || { echo "::error::the map did not change, so this proved nothing"; exit 1; }
+          [ "$s" = healthy ] || { echo "::error::docker called it $s across a map change"; exit 1; }
+
+      - name: Plant - a stopped game keeps its process, and the check goes red
+        # The check up to v1.3.3 looked for cs2 in /proc. SIGSTOP leaves the
+        # process there and the game deaf: that check must still pass and this
+        # one fail; after SIGCONT this one passes again. Found and signalled
+        # in one exec, so a wrapper cannot swap the process in between.
+        run: |
+          cid="$($COMPOSE ps -q cs2-server)"
+          sig() {  # STOP or CONT every process named cs2; prints how many
+            # shellcheck disable=SC2016  # expanded by the container's shell
+            docker exec "$cid" sh -c 'n=0; for p in /proc/[0-9]*; do [ "$(cat "$p/comm" 2>/dev/null)" = cs2 ] && kill -"$0" "${p#/proc/}" 2>/dev/null && n=$((n+1)); done; echo "$n"' "$1"
+          }
+          k="$(sig STOP)"
+          [ "${k:-0}" -gt 0 ] || { echo "::error::no cs2 process to stop"; exit 1; }
+          o=0; docker exec "$cid" sh -c "grep -qsx cs2 /proc/[0-9]*/comm" || o=$?
+          n=0; docker exec "$cid" bash /healthcheck.sh 27015 || n=$?
+          sig CONT >/dev/null
+          echo "game stopped ($k process(es)): the old check exits $o, the new one $n"
+          [ "$o" = 0 ] && [ "$n" = 1 ] || { echo "::error::expected the old check to pass (0) and the new one to fail (1)"; exit 1; }
+          for _ in $(seq 1 30); do
+            docker exec "$cid" bash /healthcheck.sh 27015 && exit 0
+            sleep 2
+          done
+          echo "::error::the game did not answer again after SIGCONT"; exit 1
+
+      - name: Stop
+        if: always()
+        run: |
+          $COMPOSE down -t 60 >/dev/null 2>&1 || true
+          docker volume rm -f cs2-server-data >/dev/null 2>&1 || true
