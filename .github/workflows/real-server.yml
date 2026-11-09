@@ -143,8 +143,8 @@ jobs:
           $COMPOSE logs --tail 80
           echo "--- the health check's own words, last runs"
           docker inspect "$cid" --format '{{range .State.Health.Log}}exit {{.ExitCode}}: {{.Output}}{{end}}' | tail -c 2000
-          echo "--- UDP sockets in the container"
-          docker exec "$cid" cat /proc/net/udp
+          echo "--- UDP sockets in the container (IPv4, then IPv6)"
+          docker exec "$cid" cat /proc/net/udp /proc/net/udp6
           exit 1
 
       - name: The health check answers again after a map change

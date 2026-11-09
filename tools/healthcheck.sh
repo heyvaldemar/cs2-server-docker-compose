@@ -27,8 +27,11 @@
 # S2C_CHALLENGE ('A' and four bytes); the query is then sent again with those
 # bytes appended, and only the info reply ('I') counts.
 #
-# THE ADDRESS IT ANSWERS ON. The addresses come from /proc/net/udp, every
-# socket bound to the game port; no socket there at all is unhealthy at once.
+# THE ADDRESS IT ANSWERS ON. The addresses come from /proc/net/udp and
+# /proc/net/udp6, every socket bound to the game port; no socket there at all
+# is unhealthy at once. CS2 binds [::], a dual-stack socket (measured
+# 2026-11-08; on 2026-11-01 it bound 0.0.0.0), which only udp6 lists and which
+# answers IPv4 as 0.0.0.0 does.
 # Bound to one address, that address. Bound to 0.0.0.0 (Left 4 Dead 2), the
 # container's own address from /etc/hosts first, then 127.0.0.1: such a
 # server did not answer a query sent to 127.0.0.1 (CI, 2026-11-08), and the
@@ -53,6 +56,11 @@ want=$(printf '%04X' "$port")
 while read -r _ local _; do
   [[ $local == *:"$want" ]] || continue
   h=${local%%:*}
+  if [ "${#h}" = 32 ]; then           # /proc/net/udp6
+    if [ "$h" = 00000000000000000000000000000000 ]; then h=00000000   # [::], dual-stack: as 0.0.0.0
+    elif [ "${h:0:24}" = 0000000000000000FFFF0000 ]; then h=${h:24:8}  # an IPv4-mapped address
+    else continue; fi                                                  # native IPv6: not asked
+  fi
   if [ "$h" = 00000000 ]; then
     cands=()
     read -r me < /etc/hostname 2>/dev/null || me=
@@ -66,7 +74,7 @@ while read -r _ local _; do
   for a in "${cands[@]}"; do
     [[ " ${addrs[*]-} " == *" $a "* ]] || addrs+=("$a")
   done
-done < <(tail -n +2 /proc/net/udp)
+done < <(tail -q -n +2 /proc/net/udp /proc/net/udp6 2>/dev/null)
 if [ "${#addrs[@]}" = 0 ]; then
   echo "unhealthy: nothing is bound to UDP port $port" >&2
   exit 1

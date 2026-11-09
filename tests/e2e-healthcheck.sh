@@ -10,6 +10,8 @@
 #   answers     bound to the interface address, as srcds binds it: healthy
 #   challenge   S2C_CHALLENGE first, the info reply only to a query carrying
 #               its bytes: healthy
+#   [::]        a dual-stack socket, listed only in /proc/net/udp6, as CS2
+#               binds it: healthy
 #   0.0.0.0     bound to every address and deaf to a query from 127.0.0.1,
 #               as Left 4 Dead 2 was in CI: healthy, asked at the
 #               container's own address
@@ -71,6 +73,10 @@ check
 standin noloop 0.0.0.0 || fail "the 0.0.0.0 stand-in never bound its port"
 check
 [ "$rc" = 0 ] && pass "bound to 0.0.0.0 and deaf to 127.0.0.1: healthy, asked at the container's address" || fail "0.0.0.0: exit $rc, $out"
+
+standin answers :: || fail "the dual-stack stand-in never bound its port"
+check
+[ "$rc" = 0 ] && pass "a dual-stack socket on [::], as CS2 binds it, listed only in udp6: healthy" || fail "dual-stack: exit $rc, $out"
 
 standin silent iface || fail "the silent stand-in never bound its port"
 check

@@ -8,7 +8,8 @@ mode   answers    the info reply ('I') to every A2S_INFO
        silent     binds the port and never answers
        noloop     answers, except a query from 127.0.0.1, as Left 4 Dead 2
                   bound to 0.0.0.0 did in CI
-bind   an address, or "iface" for the container's own interface address,
+bind   an address ("::" for a dual-stack socket), or "iface" for the
+       container's own interface address,
        which is what srcds binds
 """
 import socket
@@ -17,7 +18,11 @@ import sys
 mode, port, bind = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 if bind == "iface":
     bind = socket.gethostbyname(socket.gethostname())
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+if ":" in bind:  # "::" is a dual-stack socket, the way CS2 binds
+    s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+else:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.bind((bind, port))
 print("bound", bind, port, flush=True)
 CHALLENGE = b"\x00\x7f\xff\x41"
