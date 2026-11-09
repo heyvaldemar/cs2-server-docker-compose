@@ -65,7 +65,7 @@ jobs:
     # which is the health check telling the truth about a server nobody can
     # reach.
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       COMPOSE: docker compose -f cs2-server-docker-compose.yml -p cs2
     steps:
@@ -133,7 +133,9 @@ jobs:
       - name: Wait for the health check to go green
         run: |
           cid="$($COMPOSE ps -q cs2-server)"
-          for _ in $(seq 1 480); do
+          # 150 minutes: 73 GB took 22 minutes on 2026-11-01 and more than 80 on
+          # 2026-11-09, at whatever speed Steam's content servers give a runner.
+          for _ in $(seq 1 900); do
             s="$(docker inspect "$cid" --format '{{.State.Health.Status}}' 2>/dev/null || echo none)"
             [ "$s" = healthy ] && { echo "health: $s"; docker exec "$cid" bash /healthcheck.sh 27015; exit 0; }
             [ "$s" = unhealthy ] && break
