@@ -133,8 +133,10 @@ jobs:
       - name: Wait for the health check to go green
         run: |
           cid="$($COMPOSE ps -q cs2-server)"
-          # 150 minutes: 73 GB took 22 minutes on 2026-11-01 and more than 80 on
-          # 2026-11-09, at whatever speed Steam's content servers give a runner.
+          # 150 minutes, for a slow day: 73 GB took 22 minutes on 2026-11-01 and
+          # 20 on 2026-11-09 (run 42544528306). The 80 minutes that once stood
+          # here were cs2-classic's, whose fresh volumes could not install at all
+          # (root-owned game/ under its mounts); this file mounts nothing there.
           for _ in $(seq 1 900); do
             s="$(docker inspect "$cid" --format '{{.State.Health.Status}}' 2>/dev/null || echo none)"
             [ "$s" = healthy ] && { echo "health: $s"; docker exec "$cid" bash /healthcheck.sh 27015; exit 0; }
