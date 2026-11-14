@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **The game server token, the rcon password and the join password are no longer on the server's command line.** The image put all three there (`+sv_setsteamaccount`, `+rcon_password`, `+sv_password`), readable by every process in the container and by `ps` on the host for as long as the server ran. The compose file now passes them to the image empty, and `hooks/pre.sh`, the image's pre-start hook, writes them into `game/csgo/cfg/secrets.cfg` (mode 600), which the server executes at start and on every map.
+- **The game server token, the rcon password and the join password are no longer on the server's command line.** The image put all three there (`+sv_setsteamaccount`, `+rcon_password`, `+sv_password`), readable by every process in the container and by `ps` on the host for as long as the server ran. The compose file now passes them to the image empty, and `hooks/pre.sh`, the image's pre-start hook, writes them into `game/csgo/cfg/secrets.cfg` (mode 600), which the server executes at start and on every map. If the file cannot be written and read back whole, or a value holds a double quote or a line break, the container stops rather than start a server without its secrets.
 - **A `;` in a password no longer runs as a shell command.** The image builds the server's command line with `eval`, so a password containing `;` (or `$(…)`) was executed by the container's shell at every start. No password reaches that `eval` any more.
 
 ### Fixed
