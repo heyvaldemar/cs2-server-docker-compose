@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.5.0] - 2026-11-14
+
 ### Security
 
 - **The game server token, the rcon password and the join password are no longer on the server's command line.** The image put all three there (`+sv_setsteamaccount`, `+rcon_password`, `+sv_password`), readable by every process in the container and by `ps` on the host for as long as the server ran. The compose file now passes them to the image empty, and `hooks/pre.sh`, the image's pre-start hook, writes them into `game/csgo/cfg/secrets.cfg` (mode 600), which the server executes at start and on every map. If the file cannot be written and read back whole, or a value holds a double quote or a line break, the container stops rather than start a server without its secrets.
@@ -21,7 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **CI proves no secret leaks, on the real server.** `tests/secret-probe.sh` gives every secret the compose file passes a value of its own (the token is the real one, from a repository secret) and requires it in no `docker compose logs`, no game log, no command line in the container and no `ps` on the host, after the first start and again after a restart, with a self-test that plants a canary in all three places. `real-server.yml` also proves the token is in effect (the server's SteamID is a persistent game server's), the join password is (the server's `sv_password`, read over rcon, is the planted value, and empty with none set, so an open server stays open; CS2's A2S reports no password either way, measured with the image's own `+sv_password` too) and a wrong rcon password is refused.
-
 ## [1.4.0] - 2026-11-09
 
 ### Changed
@@ -121,7 +124,8 @@ ne thing the job exists to do was not happening, while the job failed
   suite. It deliberately does not boot the game: a runner has neither the disk
   for 60 GB nor the hours, and a test that pretends otherwise never runs.
 
-[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.3...v1.4.0
 [1.3.3]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.1...v1.3.2
