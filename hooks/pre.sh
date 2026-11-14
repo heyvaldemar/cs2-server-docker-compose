@@ -26,16 +26,23 @@
 # FAIL CLOSED. A secrets.cfg that could not be written is a server with no
 # join password, no rcon password and no token: open, and off Steam's list.
 # Any failure here ends the image's entrypoint (this file is sourced, so exit
-# ends it), and the container stops instead of starting that server.
-# The previous start's secrets.cfg goes first, before any check, so no path
-# through here leaves old credentials in the volume; a failure removes what
-# it got as far as writing. server.cfg is copied fresh by the image on every
-# start, so without this hook's line it does not run secrets.cfg either.
+# ends it), and the container stops instead of starting that server. Should a
+# server start anyway, server.cfg (copied fresh by the image on every start)
+# then ends in quit, and the server stops on its first map instead of opening.
+# The new file is written beside the old one, read back and compared, and only
+# then moved over it in one rename; a failure removes both, so no start leaves
+# old credentials in the volume.
 __cfg=""
-__fail() { [ -n "$__cfg" ] && rm -f "$__cfg/secrets.cfg"; echo "pre.sh: $1; not starting a server without its secrets" >&2; exit 1; }
+__fail() {
+  if [ -n "$__cfg" ]; then
+    rm -f "$__cfg/.secrets.cfg.new" "$__cfg/secrets.cfg"
+    [ -f "$__cfg/server.cfg" ] && printf '\nquit\n' >> "$__cfg/server.cfg"
+  fi
+  echo "pre.sh: $1; not starting a server without its secrets" >&2
+  exit 1
+}
 [ -n "${STEAMAPPDIR:-}" ] || __fail "STEAMAPPDIR is not set"
 __cfg="${STEAMAPPDIR}/game/csgo/cfg"
-rm -f "$__cfg/secrets.cfg"
 [ -d "$__cfg" ] && [ -f "$__cfg/server.cfg" ] || __fail "no $__cfg/server.cfg"
 # A value with a double quote or a line break in it would end its cfg line
 # early, and the server would take a different password without a word.
@@ -48,12 +55,13 @@ __want+="rcon_password \"${CS2T_RCON_PASSWORD:-}\""$'\n'
 __want+="sv_password \"${CS2T_SERVER_PASSWORD:-}\""$'\n'
 __umask=$(umask)
 umask 077
-printf '%s' "$__want" > "$__cfg/secrets.cfg" || __fail "secrets.cfg could not be written"
+printf '%s' "$__want" > "$__cfg/.secrets.cfg.new" || __fail "secrets.cfg could not be written"
 umask "$__umask"
-chmod 600 "$__cfg/secrets.cfg" || __fail "secrets.cfg could not be made private"
+chmod 600 "$__cfg/.secrets.cfg.new" || __fail "secrets.cfg could not be made private"
 # Read back with a bash builtin and compared whole: what the server will read.
-__have="$(< "$__cfg/secrets.cfg")"
+__have="$(< "$__cfg/.secrets.cfg.new")"
 [ "$__have"$'\n' = "$__want" ] || __fail "secrets.cfg does not hold what was written"
+mv -f "$__cfg/.secrets.cfg.new" "$__cfg/secrets.cfg" || __fail "secrets.cfg could not be put in place"
 printf '\nexec secrets.cfg\n' >> "$__cfg/server.cfg" || __fail "server.cfg could not be told to run secrets.cfg"
 grep -qx 'exec secrets.cfg' "$__cfg/server.cfg" || __fail "server.cfg does not run secrets.cfg"
 echo "pre.sh: secrets.cfg written and checked ($(wc -l < "$__cfg/secrets.cfg") settings), and executed by server.cfg on every map"
