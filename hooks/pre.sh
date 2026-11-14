@@ -27,9 +27,15 @@
 # join password, no rcon password and no token: open, and off Steam's list.
 # Any failure here ends the image's entrypoint (this file is sourced, so exit
 # ends it), and the container stops instead of starting that server.
-__fail() { echo "pre.sh: $1; not starting a server without its secrets" >&2; exit 1; }
+# The previous start's secrets.cfg goes first, before any check, so no path
+# through here leaves old credentials in the volume; a failure removes what
+# it got as far as writing. server.cfg is copied fresh by the image on every
+# start, so without this hook's line it does not run secrets.cfg either.
+__cfg=""
+__fail() { [ -n "$__cfg" ] && rm -f "$__cfg/secrets.cfg"; echo "pre.sh: $1; not starting a server without its secrets" >&2; exit 1; }
 [ -n "${STEAMAPPDIR:-}" ] || __fail "STEAMAPPDIR is not set"
 __cfg="${STEAMAPPDIR}/game/csgo/cfg"
+rm -f "$__cfg/secrets.cfg"
 [ -d "$__cfg" ] && [ -f "$__cfg/server.cfg" ] || __fail "no $__cfg/server.cfg"
 # A value with a double quote or a line break in it would end its cfg line
 # early, and the server would take a different password without a word.
