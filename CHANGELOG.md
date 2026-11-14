@@ -22,6 +22,7 @@ _(no unreleased changes yet)_
 ### Changed
 
 - **The secret probe watches the rcon client too.** `tests/secret-probe.sh during` samples the host's `ps` and every container's command lines the whole time a helper runs; Real Server wraps the rcon map change in it, so a password handed to the client as an argument, which lives only while it runs, would be caught.
+
 ## [1.5.0] - 2026-11-14
 
 ### Security
