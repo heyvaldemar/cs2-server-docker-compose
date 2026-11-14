@@ -23,6 +23,7 @@ on:
       - tests/fixtures/fake-a2s.py
       - tests/fixtures/port-owner.sh
       - tests/secret-probe.sh
+      - tests/clean-stop.sh
       - tests/fixtures/sv-password.sh
       - tests/fixtures/weapon-cleanup.sh
       - tools/steam-uptodate.sh
@@ -40,6 +41,7 @@ on:
       - tests/fixtures/fake-a2s.py
       - tests/fixtures/port-owner.sh
       - tests/secret-probe.sh
+      - tests/clean-stop.sh
       - tests/fixtures/sv-password.sh
       - tests/fixtures/weapon-cleanup.sh
       - tools/steam-uptodate.sh
@@ -367,6 +369,17 @@ jobs:
 
       - name: The probe sees what it looks for - a canary in a log and on two command lines
         run: tests/secret-probe.sh selftest
+
+      - name: A stop - timed, with its exit code (tests/clean-stop.sh; no world to save)
+        env:
+          CLEAN_STOP_PROJECT: cs2
+          CLEAN_STOP_COMPOSE: cs2-server-docker-compose.yml
+        # The entry script used to be process 1 and ignore SIGTERM (30 s of
+        # 30, exit 137, run 43621287859); with Docker's init the stop must not
+        # need Docker's SIGKILL.
+        run: |
+          out="$(tests/clean-stop.sh cs2-server -)"; echo "$out"
+          if grep -q 'Docker sent SIGKILL' <<<"$out"; then echo "::error::the stop still ended in Docker's SIGKILL"; exit 1; fi
 
       - name: Stop
         if: always()

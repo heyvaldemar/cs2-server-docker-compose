@@ -20,6 +20,14 @@ x-image-user: "1000:1000"
 services:
   cs2-server:
     image: *cs2-server-image
+    # A STOP REACHES THE GAME. The image's entry script is process 1, a bash
+    # script that does not pass SIGTERM on, and process 1 ignores a signal it
+    # has no handler for: every stop, restart and update waited the full
+    # grace period and ended in Docker's SIGKILL (30 s of 30, exit 137, CI
+    # run 43621287859). Docker's init (tini) is process 1 now, and with
+    # TINI_KILL_PROCESS_GROUP below it hands SIGTERM to the entry script and
+    # the game together.
+    init: true
     # Handles untrusted input from the internet and cannot gain privileges
     # through a setuid binary.
     security_opt:
@@ -50,6 +58,8 @@ services:
       - "${CS2_SERVER_PORT:-27015}:${CS2_SERVER_PORT:-27015}/udp"
       - "${CS2_SERVER_PORT:-27015}:${CS2_SERVER_PORT:-27015}/tcp"
     environment:
+      # tini (init: true above) signals the whole process group.
+      TINI_KILL_PROCESS_GROUP: "1"
       # NO SECRET ON THE SERVER'S COMMAND LINE. The image puts SRCDS_TOKEN,
       # CS2_RCONPW and CS2_PW on the game's command line (+sv_setsteamaccount,
       # +rcon_password, +sv_password), where every process in the container
@@ -130,8 +140,8 @@ services:
       # First boot downloads roughly 60 GB of game content through SteamCMD.
       # A short start_period marks the container unhealthy for the whole of it.
       start_period: ${CS2_SERVER_START_PERIOD:-90m}
-    # srcds writes its state on the way out. Ten seconds and a SIGKILL is
-    # enough to lose the last round and leave the game files mid-write.
+    # The stop takes seconds with init above (tests/clean-stop.sh); the grace
+    # period is the ceiling, not the wait.
     stop_grace_period: ${CS2_SERVER_STOP_GRACE_PERIOD:-30s}
     restart: unless-stopped
     logging:

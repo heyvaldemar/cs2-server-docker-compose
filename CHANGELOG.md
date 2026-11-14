@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(no unreleased changes yet)_
+### Fixed
+
+- **A stop no longer waits out the grace period.** The image's entry script is the container's process 1, a bash script that does not pass SIGTERM on, so every stop, restart and update waited the full 30 seconds and ended in Docker's SIGKILL (`tests/clean-stop.sh` in Real Server: 30 s of 30, exit 137, [run 43621287859](https://github.com/heyvaldemar/cs2-server-docker-compose/actions/runs/43621287859)). The compose file now runs Docker's init (tini) as process 1, with `TINI_KILL_PROCESS_GROUP`, so SIGTERM reaches the entry script and the game together. CS2 keeps no world, so nothing was lost, only the wait. Real Server fails a stop that needs Docker's SIGKILL.
+- **A kill for memory is named even when Docker stores its oom event late.** On a GitHub runner the oom event of 1 kill in 20 was not there when the die event was, and was ten seconds later, so the timer called a kill for memory a plain SIGKILL. A 137 with no oom event yet is now read again, for up to ten seconds.
+
+### Changed
+
+- **The secret probe** names the selftest's container from the workflow, reaches the log through any process sharing process 1's output, and prints a leaked line with Steam IDs and addresses replaced. This is its canonical copy.
+- **The stubbed container in the timer's tests has a neutral name** (`/game-server`). Tests only.
 
 ## [1.6.0] - 2026-11-14
 
