@@ -33,25 +33,24 @@
 #                                 has lasted STEAM_UPTODATE_SILENCE seconds
 #                                 (six hours), then 1. A span, not a count of
 #                                 runs: a count assumes how often it runs.
+#   restarted since the last run -> says how often, why if it can tell (an
+#                                 oom event, or the crash line from the log)
+#                                 and when; said once, exit 0
+#   3 or more of those in 24 hours -> the same, and exit 1
 #
-# AN UNREADABLE PLAYER COUNT IS NOT ZERO. Players are counted from the same
-# A2S reply that carries the version, minus the bots in it. No reply means
-# nothing is decided, and nothing is restarted.
-#
-# ONE UPDATE PER PASS, PER HOST. On the machine this template comes from, two
-# CS2 servers were behind on the same evening and were updated back to back in
-# one pass; each update has SteamCMD verify a 73 GB install, and the CPU went
-# to 81 °C. Every template that ships this script takes the same host-wide
-# lock (STEAM_UPTODATE_HOST_LOCK) around an update and leaves a stamp beside it,
-# so two servers on one host never update together, and the second one waits
-# for a pass that comes fifteen minutes after the first finished.
-#
-# SAID ONCE. Each run prints one line for the journal. Something new - behind
-# with people on, behind with no way to update, stuck, updated, an update that
-# did not take - also goes to STEAM_UPTODATE_NOTIFY, when it is set: a shell
-# command that gets the message on stdin (a webhook call, mail). The state
-# file remembers what was said, so a server that stays behind for a day says
-# so once, not ninety-six times.
+# A CRASH IS INVISIBLE TO THE HEALTH CHECK. The check runs inside the
+# container, and a crash, then Docker's restart, give it a fresh one that
+# answers again: green throughout. On a server I run with real players, CS2
+# crashed this way eleven times (out of networkable entities) before anyone
+# saw it. Docker counts its restart-policy restarts (RestartCount) on the
+# host, where this runs: each run compares the container's name, id and count
+# with what the last run wrote down. The first run only writes them down: it
+# cannot date restarts from before it. A new id (the container recreated by
+# an update or a release) starts afresh, and so does a count that went down:
+# `docker restart`, this script's own update included, sets it back to 0. The
+# price: a crash in the same window as a restart by hand is not seen.
+# Measured on a server I run with real players: `docker restart` took the
+# count from 1 to 0.
 #
 # tests/steam-uptodate.sh drives every branch against stubbed answers:
 #   STEAM_UPTODATE_PROBE   a command printing the probe's line, in place of
@@ -94,6 +93,9 @@ done
 STATE=${STEAM_UPTODATE_STATE:-.steam-uptodate-state}       # "<since> [warned] [stuck]"
 HISTORY=${STEAM_UPTODATE_HISTORY:-.steam-uptodate-updates} # one epoch per update tried
 SILENT=${STEAM_UPTODATE_SILENT_FILE:-.steam-uptodate-silent} # "<since> [warned]"
+RESTARTS=${STEAM_UPTODATE_RESTARTS_FILE:-.steam-uptodate-restarts} # "<name> <container id> <restart count> <since>"
+CRASHES=${STEAM_UPTODATE_CRASHES_FILE:-.steam-uptodate-crashes}    # one "<epoch> <restarts>" per run that saw some
+CRASH_LIMIT=${STEAM_UPTODATE_CRASH_LIMIT:-3}                       # restarts in 24 h that make it exit 1
 HOST_LOCK=${STEAM_UPTODATE_HOST_LOCK:-/var/tmp/steam-uptodate.lock}
 HOST_STAMP=${STEAM_UPTODATE_HOST_STAMP:-/var/tmp/steam-uptodate.last}
 # The probe runs python from this image, inside the server's network namespace;
@@ -121,7 +123,7 @@ tell() {  # message: once, to whoever STEAM_UPTODATE_NOTIFY reaches
 
 # A state file that is a symlink could be pointed at anything this user can
 # write; it is refused, and so is one that cannot be written.
-for f in "$STATE" "$HISTORY" "$SILENT"; do
+for f in "$STATE" "$HISTORY" "$SILENT" "$RESTARTS" "$CRASHES"; do
   [ -L "$f" ] && { say "$f is a symlink; refusing to use it"; exit 1; }
 done
 put() {  # file [line]: replace the file's content, or remove it
@@ -199,6 +201,63 @@ if [ -z "$(compose ps -q --status running "$SERVICE" 2>/dev/null)" ]; then
   say "$SERVICE is not running; nothing to ask Steam about"
   [ "$MODE" = check ] && exit 3
   exit 0
+fi
+
+# ------------------------------------------------------------- restarts
+when() { date -d "@$1" '+%F %T' 2>/dev/null || date -r "$1" '+%F %T' 2>/dev/null || echo "$1"; }
+if [ "$MODE" != check ]; then
+  rcid=$(compose ps -q --status running "$SERVICE" 2>/dev/null | head -1)
+  # One inspect, no Health in it: a container without a health check has no
+  # .State.Health, and naming it fails the whole template.
+  if ! info=$(docker inspect "$rcid" --format '{{.Name}} {{.Id}} {{.RestartCount}} {{.State.FinishedAt}} {{.State.StartedAt}}' 2>/dev/null) || [ -z "$info" ]; then
+    say "cannot read the restart count of $SERVICE; nothing written"
+    exit 1
+  fi
+  read -r rname rid rcount rfin rstart <<<"$info"
+  case ${rcount:-} in ''|*[!0-9]*) say "cannot read the restart count of $SERVICE ($rcount); nothing written"; exit 1 ;; esac
+  read -r bname bid bcount bsince 2>/dev/null <"$RESTARTS" || true
+  case ${bcount:-} in ''|*[!0-9]*) bcount="" ;; esac
+  case ${bsince:-} in ''|*[!0-9]*) bsince=$(now) ;; esac
+  if [ "${bname:-}" = "$rname" ] && [ "${bid:-}" = "$rid" ] && [ -n "$bcount" ] && [ "$rcount" -gt "$bcount" ]; then
+    more=$(( rcount - bcount ))
+    # WHY, when it can tell, from Docker's events: once Docker has restarted
+    # a container, its .State says exit code 0 and not killed for memory again
+    # (both measured), so only the events keep them. An "oom" event is the one
+    # sign of a kill for memory; 137 alone could be any SIGKILL. Read from a
+    # minute before the last run to two seconds from now: an "until" of this
+    # very second missed a die of this very second, "now" and "0s" alike
+    # (measured), and a moment ahead waits for it. Older than the daemon's
+    # memory of them: exit "?".
+    ev=$(docker events --since $(( bsince - 60 )) --until $(( $(now) + 2 )) --filter "container=$rid" --filter event=die --filter event=oom \
+      --format '{{.Action}} {{index .Actor.Attributes "exitCode"}}' 2>/dev/null)
+    rexit=$(awk '$1 == "die" { c = $2 } END { print c }' <<<"$ev")
+    case "$rexit" in
+      134) rexit="134 (SIGABRT)" ;; 137) rexit="137 (SIGKILL)" ;; 139) rexit="139 (SIGSEGV)" ;; 143) rexit="143 (SIGTERM)" ;;
+    esac
+    why=""
+    if grep -q '^oom' <<<"$ev"; then
+      why="killed for memory (oom event, exit ${rexit:-?})"
+    else
+      # The last crash line the game printed before Docker started it again.
+      # Anything 24 characters or longer is masked: a crash dump can repeat
+      # the command line, and a token with it. A game that logs only to
+      # files leaves this empty.
+      why=$(docker logs --until "$rstart" --tail 400 "$rid" 2>&1 | grep -a -i -E 'fatal|segmentation|core dumped|panic|abort' | tail -1 \
+        | sed -E 's/[A-Za-z0-9+\/=_-]{24,}/<masked>/g' | tr -d '\r' | cut -c1-200)
+      [ -n "$why" ] && why="its log before that: $why"
+    fi
+    crashed="the server restarted $more time$( [ "$more" = 1 ] || echo s) since $(when "$bsince"), last exit code ${rexit:-?}, last finished ${rfin:-?}${why:+; $why}"
+    before=0
+    [ -f "$CRASHES" ] && before=$(awk -v t=$(( $(now) - 86400 )) '$1 > t { n += $2 } END { print n + 0 }' "$CRASHES")
+    recent=$(( before + more ))
+    if [ "$MODE" = run ]; then echo "$(now) $more" >>"$CRASHES" && chmod 600 "$CRASHES"; fi
+    put "$RESTARTS" "$rname $rid $rcount $(now)"
+    say "$crashed ($recent in 24 h)"
+    tell "$GAME: $crashed. Docker brought it back and its health check is green again, so nothing else says so. docker compose -p $PROJECT logs --since 2h $SERVICE"
+    [ "$recent" -ge "$CRASH_LIMIT" ] && exit 1
+  elif [ "${bname:-}" != "$rname" ] || [ "${bid:-}" != "$rid" ] || [ -z "$bcount" ] || [ "$rcount" -lt "$bcount" ]; then
+    put "$RESTARTS" "$rname $rid $rcount $(now)"
+  fi
 fi
 
 read -r ver humans ok req < <(probe)

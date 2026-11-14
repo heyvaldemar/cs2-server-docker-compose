@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(no unreleased changes yet)_
+### Added
+
+- **The timer reports a crash Docker restarted.** The health check cannot see one: it runs inside the container, which the restart replaces. `tools/steam-uptodate.sh` now writes down the container's name, id and Docker's `RestartCount` on each run and, when the count grows, says once "the server restarted N times since <time>, last exit code X, last finished <time>" with the signal named and the reason when it can tell (Docker's oom event, or the last crash line from the log, long tokens masked); three or more in 24 hours exit 1. A recreated container and a count set back to 0 by `docker restart` start afresh (so a crash in the same window as a restart by hand is not seen). The exit code and a kill for memory come from Docker's die and oom events: a restarted container's `.State.ExitCode` reads 0 and `.State.OOMKilled` false again. Proven against real containers under the restart policy, one that crashes and one that runs out of 16 MB (`tests/restarts.sh`) and on the real server (the game killed with SIGSEGV).
+
+### Fixed
+
+- **A server with only bots on it no longer crashes after some 15,000 bot deaths.** `weapon_max_before_cleanup` and `weapon_auto_cleanup_time` default to 0, so every dropped weapon stayed on the map. With only bots on, the warmup waits for a human and never ends, each bot death left a pistol behind, and at 16,384 networkable entities the engine stopped ("Ran out of networkable entities") and segfaulted; Docker restarted it with the health check green. On servers I run with real players that happened once on casual maps and eleven times on classic ones since August. `hooks/pre.sh` now writes 64 and 120 into `server.cfg`, which runs on every map, a workshop map's included, as one marked block it replaces on every start, so the lines never pile up; two variables change them. Real Server reads both over rcon after the start and after a map change.
+
+### Changed
+
+- **The secret probe watches the rcon client too.** `tests/secret-probe.sh during` samples the host's `ps` and every container's command lines the whole time a helper runs; Real Server wraps the rcon map change in it, so a password handed to the client as an argument, which lives only while it runs, would be caught.
 
 ## [1.5.0] - 2026-11-14
 

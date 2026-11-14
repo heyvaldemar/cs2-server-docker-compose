@@ -133,6 +133,13 @@ jobs:
         # a copy with one rule removed, seen doing what the rule prevents.
         run: bash tests/steam-uptodate.sh
 
+      - name: A crash Docker restarts is said once, and three in a day fail
+        # Real containers under Docker's restart policy: one that prints a
+        # crash line and exits 3, one that runs out of 16 MB. Said once with
+        # the exit code and the reason, a restart by hand starts the count
+        # afresh, three restarts by the policy in 24 hours exit 1.
+        run: bash tests/restarts.sh
+
       - name: rcon, against a stand-in inside the pinned image
         # The README's rcon command up to v1.3 named a program the image does
         # not have. tools/rcon.sh runs in the image's own python3; here it

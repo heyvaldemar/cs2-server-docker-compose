@@ -24,6 +24,9 @@ on:
       - tests/fixtures/port-owner.sh
       - tests/secret-probe.sh
       - tests/fixtures/sv-password.sh
+      - tests/fixtures/weapon-cleanup.sh
+      - tools/steam-uptodate.sh
+      - tests/restarts.sh
       - hooks/pre.sh
       - cs2-server-docker-compose.yml
       - .env.example
@@ -38,6 +41,9 @@ on:
       - tests/fixtures/port-owner.sh
       - tests/secret-probe.sh
       - tests/fixtures/sv-password.sh
+      - tests/fixtures/weapon-cleanup.sh
+      - tools/steam-uptodate.sh
+      - tests/restarts.sh
       - hooks/pre.sh
       - cs2-server-docker-compose.yml
       - .env.example
@@ -160,6 +166,7 @@ jobs:
               # The join password, read the moment the server first answers,
               # before anyone could have joined.
               tests/fixtures/sv-password.sh CS2_SERVER_PASSWORD || { echo "::error::the server answers, and its sv_password is not the join password from secrets.cfg"; exit 1; }
+              tests/fixtures/weapon-cleanup.sh "first start" || { echo "::error::dropped weapons are not cleared: a server with only bots on it would run out of entities"; exit 1; }
               tests/secret-probe.sh check "first start"; exit $?
             fi
             [ "$s" = unhealthy ] && break
@@ -180,7 +187,9 @@ jobs:
         run: |
           cid="$($COMPOSE ps -q cs2-server)"
           docker exec "$cid" bash /healthcheck.sh 27015
-          tools/rcon.sh changelevel de_inferno >/dev/null
+          # The rcon client, watched while it runs: the password reaches it on
+          # stdin and must be on no command line, on the host or in a container.
+          tests/secret-probe.sh during "rcon changelevel" tools/rcon.sh changelevel de_inferno
           t0=$SECONDS; misses=0; ok=""
           while [ $((SECONDS - t0)) -lt 120 ]; do
             if docker exec "$cid" bash /healthcheck.sh 27015 >/dev/null 2>&1; then
@@ -191,6 +200,7 @@ jobs:
             sleep 2
           done
           map="$(tools/rcon.sh status | sed -n 's/.*\(de_[a-z0-9_]*\).*/\1/p' | head -1)"
+          tests/fixtures/weapon-cleanup.sh "after the map change" || { echo "::error::after a map change, dropped weapons are not cleared"; exit 1; }
           s="$(docker inspect "$cid" --format '{{.State.Health.Status}}')"
           echo "after changelevel: map ${map:-?}, $misses missed checks, answering at $((SECONDS - t0))s, docker health: $s"
           [ "$ok" = 1 ] || { echo "::error::the game did not answer again within two minutes of the map change"; exit 1; }
@@ -271,7 +281,15 @@ jobs:
             sleep 10
           done
           docker exec "$cid" bash /healthcheck.sh 27015
-          echo "secrets.cfg: $(docker exec "$cid" stat -c '%U %a' /home/steam/cs2-dedicated/game/csgo/cfg/secrets.cfg), server.cfg runs it: $(docker exec "$cid" grep -c '^exec secrets.cfg' /home/steam/cs2-dedicated/game/csgo/cfg/server.cfg)"
+          echo "secrets.cfg: $(docker exec "$cid" stat -c '%U %a' /home/steam/cs2-dedicated/game/csgo/cfg/secrets.cfg)"
+          # The hook's lines once each in server.cfg after a second start, not
+          # twice: the image copies server.cfg fresh, and the hook replaces its
+          # own marked block besides.
+          for l in "exec secrets.cfg" weapon_max_before_cleanup weapon_auto_cleanup_time; do
+            n="$(docker exec "$cid" grep -c "^$l" /home/steam/cs2-dedicated/game/csgo/cfg/server.cfg)"
+            echo "server.cfg after a restart: \"$l\" $n time(s)"
+            [ "$n" = 1 ] || { echo "::error::\"$l\" is in server.cfg $n times after a restart"; exit 1; }
+          done
           tests/secret-probe.sh check "after a restart"
 
       - name: Plant - the process that answers, stopped, keeps the old check green and turns this one red
@@ -304,6 +322,48 @@ jobs:
             sleep 2
           done
           echo "::error::the game did not answer again after SIGCONT"; exit 1
+
+      - name: A crash Docker restarts - the timer says so, where the health check cannot
+        # The health check runs inside the container and a crash gives it a
+        # fresh one: green. tools/steam-uptodate.sh runs on the host, where
+        # Docker counts restarts. Here: a run that writes the count down, the
+        # game process killed by SIGSEGV (the owner of UDP 27015, as its own
+        # user), Docker's restart policy bringing the container back, then a
+        # run that must say it, with the count, the exit code and the time,
+        # and one more that must say nothing. Three in a day failing, a restart
+        # by hand, the timer's own update: tests/restarts.sh and
+        # tests/steam-uptodate.sh.
+        env:
+          STEAM_UPTODATE_HOST_LOCK: ${{ runner.temp }}/steam-uptodate.lock
+          STEAM_UPTODATE_HOST_STAMP: ${{ runner.temp }}/steam-uptodate.last
+        run: |
+          cid="$($COMPOSE ps -q cs2-server)"
+          rc=0; out="$(tools/steam-uptodate.sh 2>&1)" || rc=$?
+          echo "before the crash: exit $rc: $out"
+          [ "$rc" = 0 ] || { echo "::error::the timer was not green before the crash"; exit 1; }
+          uids="$(docker exec "$cid" sh -c 'cat /proc/[0-9]*/status 2>/dev/null' | awk '/^Uid:/ { print $2 }' | sort -u)"
+          own=""; as=""
+          for u in $uids; do
+            own="$(docker exec -u "$u" -i "$cid" sh -s 27015 < tests/fixtures/port-owner.sh 2>/dev/null)" && { as="$u"; break; }
+          done
+          pid="$(awk 'NR == 1 { print $1 }' <<<"$own")"
+          [ -n "$pid" ] || { echo "::error::nobody owns UDP 27015"; exit 1; }
+          echo "SIGSEGV to pid $pid ($(awk 'NR == 1 { print $3 }' <<<"$own"))"
+          docker exec -u "$as" "$cid" kill -SEGV "$pid"
+          for _ in $(seq 1 90); do
+            n="$(docker inspect "$cid" --format '{{.RestartCount}}')"
+            [ "${n:-0}" -ge 1 ] && docker exec "$cid" bash /healthcheck.sh 27015 >/dev/null 2>&1 && break
+            sleep 10
+          done
+          echo "Docker restarted it $(docker inspect "$cid" --format '{{.RestartCount}}') time(s); health: $(docker inspect "$cid" --format '{{.State.Health.Status}}')"
+          rc=0; out="$(tools/steam-uptodate.sh 2>&1)" || rc=$?
+          echo "after the crash: exit $rc: $out"
+          if [ "$rc" != 0 ] || ! grep -q "the server restarted 1 time since .*, last exit code .*, last finished " <<<"$out"; then
+            echo "::error::the timer did not report the restart Docker did (one crash: said, exit 0)"; exit 1
+          fi
+          rc=0; out="$(tools/steam-uptodate.sh 2>&1)" || rc=$?
+          echo "the next run: exit $rc: $out"
+          if [ "$rc" != 0 ] || grep -q "restarted" <<<"$out"; then echo "::error::the timer reported the same restart twice"; exit 1; fi
 
       - name: The probe sees what it looks for - a canary in a log and on two command lines
         run: tests/secret-probe.sh selftest

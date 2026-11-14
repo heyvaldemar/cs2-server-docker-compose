@@ -7,6 +7,13 @@
 #                                         planted value, exit 1 on any
 #   tests/secret-probe.sh selftest        prove check sees a value planted in a
 #                                         log and on a command line
+#   tests/secret-probe.sh during <label> <command...>
+#                                         run a helper (an rcon client, a
+#                                         backup) and watch the host's ps and
+#                                         every container's command lines the
+#                                         whole time: a value handed to a
+#                                         helper as an argument lives only
+#                                         while it runs
 #
 # WHAT COUNTS AS A SECRET. Every variable the compose file interpolates whose
 # name has PASS, PWD, SECRET, TOKEN, KEY or CRED in it. plant gives each one a
@@ -188,6 +195,41 @@ case "$mode" in
     if [ -n "${PROBE_GAME_LOGS:-}" ]; then gl="the game's logs ($(wc -l <"$WORK/gamelogs") lines)"; else gl="the game's logs (none configured: PROBE_GAME_LOGS is empty)"; fi
     echo "secret-probe ($label): $n_all values; none in docker compose logs ($(wc -l <"$WORK/logs") lines), and none outside what the README documents in $gl, the containers' command lines ($(wc -l <"$WORK/cmdlines") processes) or the host's ps"
     ;;
+  during)
+    label="${2:-during}"; shift 2 || { echo "usage: $0 during <label> <command...>" >&2; exit 2; }
+    [ "$#" -gt 0 ] || { echo "usage: $0 during <label> <command...>" >&2; exit 2; }
+    [ -s "$VALUES" ] || { echo "secret-probe: no values file; run plant before the stack starts" >&2; exit 2; }
+    WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+    : >"$WORK/samples"
+    cids="$(docker compose -p "$PROJECT" -f "$COMPOSE" ps -q 2>/dev/null)"
+    # Sampling until the helper is done: the host's ps every tenth of a
+    # second, each container's command lines as often as docker exec allows.
+    (
+      while [ ! -e "$WORK/done" ]; do
+        ps -eo args >>"$WORK/samples"
+        for c in $cids; do
+          docker exec -u 0 "$c" sh -c 'for p in /proc/[0-9]*; do [ -r "$p/cmdline" ] && tr "\0" " " <"$p/cmdline" && echo; done' >>"$WORK/samples" 2>/dev/null &
+        done
+        sleep 0.1
+      done
+    ) &
+    sampler=$!
+    sleep 0.3
+    rc=0; "$@" >"$WORK/out" 2>&1 || rc=$?
+    sleep 0.3
+    touch "$WORK/done"; wait "$sampler" 2>/dev/null; wait 2>/dev/null
+    bad=0; n_all=0
+    while IFS=$'\t' read -r n v; do
+      n_all=$((n_all + 1))
+      printf '%s\n' "$v" >"$WORK/value"
+      if grep -F -q -f "$WORK/value" "$WORK/samples"; then
+        echo "::error::secret-probe ($label): the value of $n was on a command line while the helper ran"
+        bad=1
+      fi
+    done <"$VALUES"
+    echo "secret-probe ($label): the helper exited $rc; $(wc -l <"$WORK/samples") process lines sampled while it ran; $([ "$bad" = 0 ] && echo "none of $n_all values among them")"
+    [ "$bad" = 0 ] && [ "$rc" = 0 ]
+    ;;
   selftest)
     # A canary, not a planted value: written to the first container's log,
     # held on the command line of a process inside it (both from inside the
@@ -216,7 +258,7 @@ case "$mode" in
     fi
     ;;
   *)
-    echo "usage: $0 plant | check <label> | selftest" >&2
+    echo "usage: $0 plant | check <label> | selftest | during <label> <command...>" >&2
     exit 2
     ;;
 esac
