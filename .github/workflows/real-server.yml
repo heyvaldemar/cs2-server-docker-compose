@@ -22,6 +22,9 @@ on:
       - tests/e2e-healthcheck.sh
       - tests/fixtures/fake-a2s.py
       - tests/fixtures/port-owner.sh
+      - tests/secret-probe.sh
+      - tests/fixtures/sv-password.sh
+      - hooks/pre.sh
       - cs2-server-docker-compose.yml
       - .env.example
       - .github/workflows/real-server.yml
@@ -33,6 +36,9 @@ on:
       - tests/e2e-healthcheck.sh
       - tests/fixtures/fake-a2s.py
       - tests/fixtures/port-owner.sh
+      - tests/secret-probe.sh
+      - tests/fixtures/sv-password.sh
+      - hooks/pre.sh
       - cs2-server-docker-compose.yml
       - .env.example
       - .github/workflows/real-server.yml
@@ -68,6 +74,14 @@ jobs:
     timeout-minutes: 180
     env:
       COMPOSE: docker compose -f cs2-server-docker-compose.yml -p cs2
+      # tests/secret-probe.sh: every secret the compose file passes gets a
+      # value of its own (the game server token is kept: Steam must accept it),
+      # and none may reach a log, the game's own logs or a command line.
+      PROBE_PROJECT: cs2
+      PROBE_KEEP: CS2_SERVER_STEAM_TOKEN
+      PROBE_EXPECT: CS2_SERVER_STEAM_TOKEN CS2_SERVER_RCON_PASSWORD CS2_SERVER_PASSWORD
+      # No game log files: CS2 logs to its console (sv_logfile is off), which is
+      # docker compose logs (run 43550550561 found no log file in the install).
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,10 +117,9 @@ jobs:
           STEAM_TOKEN: ${{ secrets.CS2_CI_STEAM_TOKEN }}
         run: |
           cp .env.example .env
-          # A throwaway rcon password, and a placeholder game server token that
-          # the repository secret replaces when it exists (see runs-on above).
-          sed -i -e "s/^CS2_SERVER_RCON_PASSWORD=.*/CS2_SERVER_RCON_PASSWORD=$(openssl rand -hex 16)/" \
-                 -e "s/^CS2_SERVER_STEAM_TOKEN=$/CS2_SERVER_STEAM_TOKEN=ci-placeholder/" .env
+          # A placeholder game server token that the repository secret
+          # replaces when it exists (see runs-on above).
+          sed -i -e "s/^CS2_SERVER_STEAM_TOKEN=$/CS2_SERVER_STEAM_TOKEN=ci-placeholder/" .env
           # The token, when the secret exists, goes into .env through awk's
           # environment, never a command line.
           if [ -n "$STEAM_TOKEN" ]; then
@@ -115,6 +128,9 @@ jobs:
           else
             echo "::warning::no CS2_CI_STEAM_TOKEN secret: a placeholder token, with which CS2 no longer logs into Steam"
           fi
+          # A value of its own for the rcon password and the join password
+          # (so the server is password-protected), the token kept.
+          tests/secret-probe.sh plant
           docker volume create cs2-server-data >/dev/null
           $COMPOSE up -d
 
@@ -139,7 +155,13 @@ jobs:
           # (root-owned game/ under its mounts); this file mounts nothing there.
           for _ in $(seq 1 900); do
             s="$(docker inspect "$cid" --format '{{.State.Health.Status}}' 2>/dev/null || echo none)"
-            [ "$s" = healthy ] && { echo "health: $s"; docker exec "$cid" bash /healthcheck.sh 27015; exit 0; }
+            if [ "$s" = healthy ]; then
+              echo "health: $s"; docker exec "$cid" bash /healthcheck.sh 27015
+              # The join password, read the moment the server first answers,
+              # before anyone could have joined.
+              tests/fixtures/sv-password.sh CS2_SERVER_PASSWORD || { echo "::error::the server answers, and its sv_password is not the join password from secrets.cfg"; exit 1; }
+              tests/secret-probe.sh check "first start"; exit $?
+            fi
             [ "$s" = unhealthy ] && break
             sleep 10
           done
@@ -175,6 +197,83 @@ jobs:
           [ "$map" = de_inferno ] || { echo "::error::the map did not change, so this proved nothing"; exit 1; }
           [ "$s" = healthy ] || { echo "::error::docker called it $s across a map change"; exit 1; }
 
+      - name: The token, the rcon password and the join password work from secrets.cfg
+        # None is on the command line any more, so each is proven where it
+        # now lives. The token: the server's own SteamID, in its A2S answer, is
+        # a persistent game server's (account type 3), which only a game
+        # server token gives; anonymous is type 4. The join password: the
+        # server's sv_password, read over rcon, is the planted value (compared,
+        # never printed); and with no join password set, it is empty, so the
+        # server is open as before. Not A2S: CS2 answers "no password" either
+        # way, with the image's own +sv_password too (run 43555619039). The
+        # rcon password: the map change above went through rcon with it, after
+        # server.cfg ran again on the new map; here a wrong one is refused.
+        run: |
+          python3 - <<'PY'
+          import socket, struct, sys
+          s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(3)
+          q = b"\xff\xff\xff\xffTSource Engine Query\x00"
+          for _ in range(5):
+              try:
+                  s.sendto(q, ("127.0.0.1", 27015)); d, _ = s.recvfrom(1400)
+                  if d[4:5] == b"A":
+                      s.sendto(q + d[5:9], ("127.0.0.1", 27015)); d, _ = s.recvfrom(1400)
+                  break
+              except OSError:
+                  continue
+          else:
+              sys.exit("no A2S answer")
+          b = d[6:]; i = 0
+          for _ in range(4):
+              i = b.index(b"\x00", i) + 1
+          i += 2 + 7
+          i = b.index(b"\x00", i) + 1
+          edf = b[i] if i < len(b) else 0; i += 1
+          if edf & 0x80:
+              i += 2
+          sid = struct.unpack("<Q", b[i:i + 8])[0] if edf & 0x10 else None
+          kind = (sid >> 52) & 0xF if sid else None
+          print(f"the server's SteamID is account type {kind} (3 is a persistent game server, 4 anonymous)")
+          if kind != 3:
+              sys.exit("the server did not log into Steam with the game server token from secrets.cfg")
+          PY
+          tests/fixtures/sv-password.sh CS2_SERVER_PASSWORD || { echo "::error::the server's sv_password is not the join password from secrets.cfg"; exit 1; }
+          echo "the join password from secrets.cfg is the server's sv_password"
+          # Without a join password, the server is open, as it was: recreated
+          # with none, sv_password is empty. Then back to the planted one.
+          cp .env "$RUNNER_TEMP/env.real"
+          awk -F= '$1 == "CS2_SERVER_PASSWORD" { print $1 "="; next } { print }' "$RUNNER_TEMP/env.real" > .env
+          $COMPOSE up -d >/dev/null 2>&1
+          cid="$($COMPOSE ps -q cs2-server)"
+          for _ in $(seq 1 60); do docker exec "$cid" bash /healthcheck.sh 27015 >/dev/null 2>&1 && break; sleep 5; done
+          tests/fixtures/sv-password.sh || { cat "$RUNNER_TEMP/env.real" > .env; echo "::error::with no join password set, the server still has one"; exit 1; }
+          echo "with no join password set, sv_password is empty: the server is open"
+          cat "$RUNNER_TEMP/env.real" > .env
+          $COMPOSE up -d >/dev/null 2>&1
+          cid="$($COMPOSE ps -q cs2-server)"
+          for _ in $(seq 1 60); do docker exec "$cid" bash /healthcheck.sh 27015 >/dev/null 2>&1 && break; sleep 5; done
+          tests/fixtures/sv-password.sh CS2_SERVER_PASSWORD || { echo "::error::back with the join password, the server's sv_password is not it"; exit 1; }
+          # A wrong rcon password is refused.
+          awk -F= '$1 == "CS2_SERVER_RCON_PASSWORD" { print $1 "=wrong" substr($2, 1, 4); next } { print }' "$RUNNER_TEMP/env.real" > .env
+          rc=0; out="$(tools/rcon.sh status 2>&1)" || rc=$?
+          cat "$RUNNER_TEMP/env.real" > .env; rm -f "$RUNNER_TEMP/env.real"
+          echo "rcon with a wrong password: exit $rc: $out" | head -3
+          if [ "$rc" = 0 ] || ! grep -q "refused" <<<"$out"; then
+            echo "::error::a wrong rcon password was not refused, so no password was set"; exit 1
+          fi
+
+      - name: After a restart - secrets.cfg is written again, and the probe looks once more
+        run: |
+          cid="$($COMPOSE ps -q cs2-server)"
+          $COMPOSE restart cs2-server >/dev/null
+          for _ in $(seq 1 60); do
+            [ "$(docker inspect "$cid" --format '{{.State.Health.Status}}')" = healthy ] && docker exec "$cid" bash /healthcheck.sh 27015 >/dev/null 2>&1 && break
+            sleep 10
+          done
+          docker exec "$cid" bash /healthcheck.sh 27015
+          echo "secrets.cfg: $(docker exec "$cid" stat -c '%U %a' /home/steam/cs2-dedicated/game/csgo/cfg/secrets.cfg), server.cfg runs it: $(docker exec "$cid" grep -c '^exec secrets.cfg' /home/steam/cs2-dedicated/game/csgo/cfg/server.cfg)"
+          tests/secret-probe.sh check "after a restart"
+
       - name: Plant - the process that answers, stopped, keeps the old check green and turns this one red
         # The check up to v1.3.3 was cs2 in /proc. SIGSTOP on the process that
         # owns the port's UDP socket (tests/fixtures/port-owner.sh; a name match
@@ -206,8 +305,12 @@ jobs:
           done
           echo "::error::the game did not answer again after SIGCONT"; exit 1
 
+      - name: The probe sees what it looks for - a canary in a log and on two command lines
+        run: tests/secret-probe.sh selftest
+
       - name: Stop
         if: always()
         run: |
           $COMPOSE down -t 60 >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/secret-probe.values" "$RUNNER_TEMP/env.real" .env
           docker volume rm -f cs2-server-data >/dev/null 2>&1 || true

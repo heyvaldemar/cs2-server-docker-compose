@@ -106,7 +106,7 @@ jobs:
         # Pinned, and the same image a maintainer runs locally: Ubuntu's
         # packaged shellcheck is a different version with different defaults.
         run: |
-          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 tests/*.sh tools/*.sh update.sh
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 tests/*.sh tools/*.sh hooks/*.sh update.sh
 
       - name: The health check goes by the game's answer, in the pinned image
         # tools/healthcheck.sh is healthy only on the engine's reply to

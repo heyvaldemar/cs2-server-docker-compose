@@ -50,13 +50,27 @@ services:
       - "${CS2_SERVER_PORT:-27015}:${CS2_SERVER_PORT:-27015}/udp"
       - "${CS2_SERVER_PORT:-27015}:${CS2_SERVER_PORT:-27015}/tcp"
     environment:
+      # NO SECRET ON THE SERVER'S COMMAND LINE. The image puts SRCDS_TOKEN,
+      # CS2_RCONPW and CS2_PW on the game's command line (+sv_setsteamaccount,
+      # +rcon_password, +sv_password), where every process in the container
+      # and `ps` on the host can read them, through an eval that runs a ";" in
+      # a password as a command. They go to the image empty (empty, not unset:
+      # unset, the image's own default rcon password applies), and the real
+      # values under names it does not read, to hooks/pre.sh, which writes them
+      # into secrets.cfg; the server executes it at start (CS2_ADDITIONAL_ARGS)
+      # and on every map (server.cfg). tests/secret-probe.sh proves no value
+      # reaches a log or a command line.
+      SRCDS_TOKEN: ""
+      CS2_RCONPW: ""
+      CS2_PW: ""
       # A Game Server Login Token, from https://steamcommunity.com/dev/managegameservers
       # (app id 730). Without one the server runs but stays off the public list,
       # which looks identical to a broken server from a player's side.
-      SRCDS_TOKEN: ${CS2_SERVER_STEAM_TOKEN:?set in .env - see .env.example}
+      CS2T_STEAM_TOKEN: ${CS2_SERVER_STEAM_TOKEN:?set in .env - see .env.example}
+      CS2T_RCON_PASSWORD: ${CS2_SERVER_RCON_PASSWORD:?set in .env - see .env.example for generation command}
+      CS2T_SERVER_PASSWORD: ${CS2_SERVER_PASSWORD:-}
+      CS2_ADDITIONAL_ARGS: "+exec secrets.cfg"
       CS2_SERVERNAME: ${CS2_SERVER_NAME:-CS2 Dedicated Server}
-      CS2_RCONPW: ${CS2_SERVER_RCON_PASSWORD:?set in .env - see .env.example for generation command}
-      CS2_PW: ${CS2_SERVER_PASSWORD:-}
       CS2_PORT: ${CS2_SERVER_PORT:-27015}
       CS2_MAXPLAYERS: ${CS2_SERVER_MAX_PLAYERS:-10}
       CS2_GAMEALIAS: ${CS2_SERVER_GAME_ALIAS:-competitive}
@@ -89,6 +103,10 @@ services:
       - cs2-server-data:/home/steam/cs2-dedicated
       # The health check: A2S_INFO to the game port (see healthcheck: below).
       - ./tools/healthcheck.sh:/healthcheck.sh:ro
+      # The image's pre-start hook, at the path it sources: the secrets into
+      # secrets.cfg (see environment: above). At the volume's root, so Docker
+      # creates no directory for it inside the game's tree.
+      - ./hooks/pre.sh:/home/steam/cs2-dedicated/pre.sh:ro
     healthcheck:
       # THE GAME'S OWN ANSWER, NOT ITS PROCESS. tools/healthcheck.sh sends
       # A2S_INFO, the query every server browser sends, to the game port and is

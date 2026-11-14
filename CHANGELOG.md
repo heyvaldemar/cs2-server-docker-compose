@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The game server token, the rcon password and the join password are no longer on the server's command line.** The image put all three there (`+sv_setsteamaccount`, `+rcon_password`, `+sv_password`), readable by every process in the container and by `ps` on the host for as long as the server ran. The compose file now passes them to the image empty, and `hooks/pre.sh`, the image's pre-start hook, writes them into `game/csgo/cfg/secrets.cfg` (mode 600), which the server executes at start and on every map.
+- **A `;` in a password no longer runs as a shell command.** The image builds the server's command line with `eval`, so a password containing `;` (or `$(…)`) was executed by the container's shell at every start. No password reaches that `eval` any more.
+
 ### Fixed
 
+- **The health check could cut its own request in two.** bash writes printf's output line by line, so the query echoing the server's challenge went out as two datagrams whenever the challenge held a newline byte (0x0a), and that try went unanswered. The request now goes to a file first and out in one write. `tests/e2e-healthcheck.sh` proves it against a stand-in whose challenge holds one: the v1.4 check sends 26 and 3 bytes and stays unhealthy, this one one datagram of 29.
+
 - **An index pushed again over the same build is no longer reported as drift.** The daily pin check compared each pin with the digest the tag's index has now and failed on any difference, so a publisher re-pushing the index over the very same images (a platform added, an attestation rewritten) turned it red for an image nobody rebuilt, and no pin would ever move to turn it green. It now also compares the linux/amd64 build under both digests, the one CI runs and proves: the same build passes with a notice naming both digests, a new build fails as drift exactly as before, and a build that cannot be read still fails.
+
+### Changed
+
+- **CI proves no secret leaks, on the real server.** `tests/secret-probe.sh` gives every secret the compose file passes a value of its own (the token is the real one, from a repository secret) and requires it in no `docker compose logs`, no game log, no command line in the container and no `ps` on the host, after the first start and again after a restart, with a self-test that plants a canary in all three places. `real-server.yml` also proves the token is in effect (the server's SteamID is a persistent game server's), the join password is (the server's `sv_password`, read over rcon, is the planted value, and empty with none set, so an open server stays open; CS2's A2S reports no password either way, measured with the image's own `+sv_password` too) and a wrong rcon password is refused.
 
 ## [1.4.0] - 2026-11-09
 
