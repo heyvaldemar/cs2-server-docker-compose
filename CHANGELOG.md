@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.7.0] - 2026-11-14
+
 ### Fixed
 
 - **A stop no longer waits out the grace period.** The image's entry script is the container's process 1, a bash script that does not pass SIGTERM on, so every stop, restart and update waited the full 30 seconds and ended in Docker's SIGKILL (`tests/clean-stop.sh` in Real Server: 30 s of 30, exit 137, [run 43621287859](https://github.com/heyvaldemar/cs2-server-docker-compose/actions/runs/43621287859)). The compose file now runs Docker's init (tini) as process 1, with `TINI_KILL_PROCESS_GROUP`, so SIGTERM reaches the entry script and the game together. CS2 keeps no world, so nothing was lost, only the wait. Real Server fails a stop that needs Docker's SIGKILL.
@@ -146,7 +150,8 @@ ne thing the job exists to do was not happening, while the job failed
   suite. It deliberately does not boot the game: a runner has neither the disk
   for 60 GB nor the hours, and a test that pretends otherwise never runs.
 
-[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.3...v1.4.0
