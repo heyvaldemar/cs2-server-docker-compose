@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.6.0] - 2026-11-14
+
 ### Added
 
 - **The timer reports a crash Docker restarted.** The health check cannot see one: it runs inside the container, which the restart replaces. `tools/steam-uptodate.sh` now writes down the container's name, id and Docker's `RestartCount` on each run and, when the count grows, says once "the server restarted N times since <time>, last exit code X, last finished <time>" with the signal named and the reason when it can tell (Docker's oom event, or the last crash line from the log, long tokens masked); three or more in 24 hours exit 1. A recreated container and a count set back to 0 by `docker restart` start afresh (so a crash in the same window as a restart by hand is not seen). The exit code and a kill for memory come from Docker's die and oom events: a restarted container's `.State.ExitCode` reads 0 and `.State.OOMKilled` false again. Proven against real containers under the restart policy, one that crashes and one that runs out of 16 MB (`tests/restarts.sh`) and on the real server (the game killed with SIGSEGV).
@@ -18,7 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **The secret probe watches the rcon client too.** `tests/secret-probe.sh during` samples the host's `ps` and every container's command lines the whole time a helper runs; Real Server wraps the rcon map change in it, so a password handed to the client as an argument, which lives only while it runs, would be caught.
-
 ## [1.5.0] - 2026-11-14
 
 ### Security
@@ -134,7 +137,8 @@ ne thing the job exists to do was not happening, while the job failed
   suite. It deliberately does not boot the game: a runner has neither the disk
   for 60 GB nor the hours, and a test that pretends otherwise never runs.
 
-[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.3...v1.4.0
 [1.3.3]: https://github.com/heyvaldemar/cs2-server-docker-compose/compare/v1.3.2...v1.3.3
